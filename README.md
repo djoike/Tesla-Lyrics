@@ -62,23 +62,56 @@ Default tags include:
 - `latest`
 - `sha-<commit>`
 
-### 3) Create container in Synology Container Manager
+### 3) Pull the image via SSH
 
-- Image: `ghcr.io/<your-github-user>/tesla-lyrics:latest`
-- Ports: `5011` → `5011`
-- Mounts:
-  - `/volume1/docker/tesla-lyrics/.env` → `/app/.env` (read-only)
-  - `/volume1/docker/tesla-lyrics/tokens.json` → `/app/.tokens.json`
-- Restart policy: `unless-stopped`
+Synology Container Manager's UI cannot authenticate with GHCR directly. Pull the image via SSH instead:
 
-### 4) Authenticate with Spotify
+```bash
+ssh admin@<YOUR_NAS_IP>
+sudo docker pull ghcr.io/djoike/tesla-lyrics:latest
+```
+
+The image will then appear in Container Manager under **Image**.
+
+### 4) Create container in Synology Container Manager
+
+Open Container Manager → **Image** → select `tesla-lyrics:latest` → **Run**, and configure each step:
+
+**General Settings**
+- Container name: `tesla-lyrics`
+- Enable auto-restart: on
+
+**Port Settings**
+- Local port `5011` → Container port `5011` (TCP)
+
+**Volume / Bind Mounts**
+| Local path | Container path | Mode |
+|---|---|---|
+| `/volume1/docker/tesla-lyrics/.env` | `/app/.env` | Read-only |
+| `/volume1/docker/tesla-lyrics/tokens.json` | `/app/.tokens.json` | Read/Write |
+
+**Environment Variables**
+- Leave empty — all config is loaded from the `.env` bind mount.
+
+### 5) Authenticate with Spotify
 
 Open `http://<YOUR_NAS_IP>:5011/login` in any browser and complete the Spotify login. Tokens are written to `tokens.json` on the NAS and persist across container restarts — you only need to do this once.
 
-### 5) Verify
+### 6) Verify
 
 - Open container logs in Container Manager and confirm the server started on port 5011.
 - Open `http://<YOUR_NAS_IP>:5011` in your Tesla browser, tap **Start**, and play a song.
+
+### Updating
+
+Synology's UI cannot pull updated images from GHCR. After pushing new code and the GitHub Actions workflow completes, update via SSH:
+
+```bash
+ssh admin@<YOUR_NAS_IP>
+sudo docker pull ghcr.io/djoike/tesla-lyrics:latest
+```
+
+Then in Container Manager, select the `tesla-lyrics` container → **Action → Restart**.
 
 ---
 
