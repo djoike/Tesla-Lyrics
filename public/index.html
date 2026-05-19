@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tesla Lyrics</title>
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #F4F1EA;
+      --text-primary: #1a1a1a;
+      --text-secondary: #555550;
+      --text-muted: #8a8880;
+      --accent: #2d2d2a;
+      --btn-bg: rgba(26, 26, 26, 0.08);
+      --btn-hover: rgba(26, 26, 26, 0.16);
+      --btn-active-bg: #1a1a1a;
+      --btn-active-text: #F4F1EA;
+      --indicator-on: #3a8a4a;
+      --indicator-off: #8a8880;
+      --max-font-size: 28px;
+      --min-font-size: 11px;
+    }
+
+    html, body {
+      height: 100%;
+      width: 100%;
+      background: var(--bg);
+      color: var(--text-primary);
+      font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+      padding: 20px 28px 16px;
+    }
+
+    #header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      flex-shrink: 0;
+      gap: 16px;
+      min-height: 56px;
+    }
+
+    #track-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    #track-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.3;
+    }
+
+    #track-artist {
+      font-size: 14px;
+      font-weight: 400;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 2px;
+    }
+
+    #controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      background: var(--btn-bg);
+      color: var(--text-primary);
+      transition: background 0.15s, transform 0.1s;
+      white-space: nowrap;
+      letter-spacing: 0.01em;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    .btn:hover {
+      background: var(--btn-hover);
+    }
+
+    .btn:active {
+      transform: scale(0.96);
+    }
+
+    .btn.active {
+      background: var(--btn-active-bg);
+      color: var(--btn-active-text);
+    }
+
+    #status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--indicator-off);
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+
+    #status-dot.on {
+      background: var(--indicator-on);
+      box-shadow: 0 0 0 3px rgba(58, 138, 74, 0.2);
+    }
+
+    #divider {
+      height: 1px;
+      background: rgba(26, 26, 26, 0.1);
+      margin: 12px 0;
+      flex-shrink: 0;
+    }
+
+    #lyrics-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    #lyrics-text {
+      font-size: var(--max-font-size);
+      line-height: 1.6;
+      color: var(--text-primary);
+      text-align: center;
+      width: 100%;
+      white-space: pre-wrap;
+      word-break: break-word;
+      transition: font-size 0.2s ease;
+    }
+
+    #lyrics-text.muted {
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    #login-banner {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #1a1a1a;
+      color: #F4F1EA;
+      padding: 14px 28px;
+      text-align: center;
+      font-size: 14px;
+      display: none;
+    }
+
+    #login-banner a {
+      color: #a8d8b0;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    #login-banner.visible {
+      display: block;
+    }
+
+    #timeout-toast {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-60px);
+      background: #1a1a1a;
+      color: #F4F1EA;
+      padding: 10px 20px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      transition: transform 0.3s ease;
+      z-index: 100;
+      white-space: nowrap;
+    }
+
+    #timeout-toast.visible {
+      transform: translateX(-50%) translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="header">
+      <div id="track-info">
+        <div id="track-title">Tesla Lyrics</div>
+        <div id="track-artist">Connect to Spotify to begin</div>
+      </div>
+      <div id="controls">
+        <div id="status-dot"></div>
+        <button class="btn" id="btn-start">Start</button>
+        <button class="btn" id="btn-stop">Stop</button>
+      </div>
+    </div>
+    <div id="divider"></div>
+    <div id="lyrics-container">
+      <div id="lyrics-text" class="muted">Tap Start to load lyrics.</div>
+    </div>
+  </div>
+
+  <div id="login-banner">
+    Not authenticated with Spotify. <a href="/login">Tap here to log in →</a>
+  </div>
+
+  <div id="timeout-toast">⏱ Polling stopped after 1 hour.</div>
+
+  <script>
+    const lyricsEl = document.getElementById('lyrics-text');
+    const titleEl = document.getElementById('track-title');
+    const artistEl = document.getElementById('track-artist');
+    const statusDot = document.getElementById('status-dot');
+    const btnStart = document.getElementById('btn-start');
+    const btnStop = document.getElementById('btn-stop');
+    const loginBanner = document.getElementById('login-banner');
+    const timeoutToast = document.getElementById('timeout-toast');
+
+    const MAX_FONT_PX = 28;
+    const MIN_FONT_PX = 11;
+
+    function fitLyricsText() {
+      const container = document.getElementById('lyrics-container');
+      const availH = container.clientHeight;
+      const availW = container.clientWidth;
+
+      lyricsEl.style.fontSize = MAX_FONT_PX + 'px';
+
+      let lo = MIN_FONT_PX;
+      let hi = MAX_FONT_PX;
+
+      for (let i = 0; i < 20; i++) {
+        const mid = (lo + hi) / 2;
+        lyricsEl.style.fontSize = mid + 'px';
+        if (lyricsEl.scrollHeight <= availH && lyricsEl.scrollWidth <= availW) {
+          lo = mid;
+        } else {
+          hi = mid;
+        }
+      }
+
+      lyricsEl.style.fontSize = Math.floor(lo) + 'px';
+    }
+
+    function setPollingUI(active) {
+      if (active) {
+        statusDot.classList.add('on');
+        btnStart.classList.add('active');
+        btnStop.classList.remove('active');
+      } else {
+        statusDot.classList.remove('on');
+        btnStart.classList.remove('active');
+        btnStop.classList.add('active');
+      }
+    }
+
+    function showLyrics(text, isMuted) {
+      lyricsEl.textContent = text;
+      lyricsEl.classList.toggle('muted', !!isMuted);
+      requestAnimationFrame(fitLyricsText);
+    }
+
+    function showTimeout() {
+      timeoutToast.classList.add('visible');
+      setTimeout(() => timeoutToast.classList.remove('visible'), 5000);
+    }
+
+    function handleEvent(payload) {
+      if (payload.status === 'timeout') {
+        setPollingUI(false);
+        showTimeout();
+        return;
+      }
+
+      if (payload.status === 'polling_started') {
+        setPollingUI(true);
+        return;
+      }
+
+      if (payload.status === 'polling_stopped') {
+        setPollingUI(false);
+        showLyrics('Polling stopped.', true);
+        return;
+      }
+
+      setPollingUI(payload.isPolling);
+
+      if (payload.status === 'playing' && payload.title) {
+        titleEl.textContent = payload.title;
+        artistEl.textContent = payload.artist || '';
+        showLyrics(payload.lyrics || 'Lyrics not found.', !payload.lyrics);
+      } else if (payload.status === 'idle') {
+        titleEl.textContent = 'Nothing playing';
+        artistEl.textContent = '';
+        showLyrics('Nothing is currently playing.', true);
+      } else {
+        showLyrics(payload.lyrics || 'Tap Start to load lyrics.', true);
+      }
+    }
+
+    function connectSSE() {
+      const es = new EventSource('/events');
+
+      es.onmessage = (e) => {
+        try {
+          handleEvent(JSON.parse(e.data));
+        } catch (_) {}
+      };
+
+      es.onerror = () => {
+        es.close();
+        setTimeout(connectSSE, 3000);
+      };
+    }
+
+    async function apiCall(endpoint) {
+      try {
+        const res = await fetch(endpoint, { method: 'POST' });
+        if (res.status === 401) {
+          loginBanner.classList.add('visible');
+        }
+      } catch (_) {}
+    }
+
+    btnStart.addEventListener('click', () => apiCall('/api/start'));
+    btnStop.addEventListener('click', () => apiCall('/api/stop'));
+
+    async function checkAuth() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        if (!data.authenticated) {
+          loginBanner.classList.add('visible');
+        }
+        setPollingUI(data.isPolling);
+      } catch (_) {}
+    }
+
+    async function acquireWakeLock() {
+      if (!('wakeLock' in navigator)) return;
+      try {
+        await navigator.wakeLock.request('screen');
+      } catch (_) {}
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') acquireWakeLock();
+    });
+
+    window.addEventListener('resize', fitLyricsText);
+
+    checkAuth();
+    connectSSE();
+    acquireWakeLock();
+  </script>
+</body>
+</html>
