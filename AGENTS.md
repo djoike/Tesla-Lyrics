@@ -39,13 +39,14 @@ The app runs on **port 5011** (set via `PORT` env var, default `5011`).
 | `SPOTIFY_CLIENT_SECRET` | From Spotify Developer Dashboard |
 | `REDIRECT_URI` | Must match exactly what is registered in Spotify dashboard |
 | `PORT` | Server port (default: `5011`) |
+| `GENIUS_ACCESS_TOKEN` | From genius.com/api-clients — optional, enables Genius lyrics fallback |
 
 ## Key backend behaviour
 
 - **Token storage:** Spotify tokens are persisted to `.tokens.json` in the app root. This file must be bind-mounted on the host so tokens survive container restarts. It must be created (`touch`) before the container starts or Docker will create a directory instead.
 - **Polling state machine:** `isPolling` bool, toggled via `POST /api/start` and `POST /api/stop`. Auto-stops after 60 minutes.
 - **Song change detection:** Tracks `currentTrackId`; only fetches lyrics and broadcasts SSE when the track ID changes.
-- **Lyrics:** Fetched from `https://lrclib.net/api/get`. Returns `"Lyrics not found."` on 404 or any error — never throws.
+- **Lyrics:** Fetched from `https://lrclib.net/api/get` first. If LRCLIB returns nothing, falls back to Genius (`https://api.genius.com/search` + page scrape via cheerio). Returns `"Lyrics not found."` if both fail — never throws.
 - **SSE:** `/events` endpoint. Sends current state immediately on connect. Heartbeat comment every 30 seconds to keep the Tesla browser connection alive.
 
 ## Key frontend behaviour

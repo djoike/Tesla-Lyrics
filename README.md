@@ -18,6 +18,16 @@ The server polls Spotify every 5 seconds while active, fetches lyrics from [LRCL
 
 > **Important:** The `REDIRECT_URI` in your `.env` must match exactly what you registered in the Spotify dashboard.
 
+### 2. Get a Genius Access Token (optional but recommended)
+
+Genius is used as a fallback when LRCLIB has no lyrics for a track, significantly improving coverage for mainstream music.
+
+1. Go to [genius.com/api-clients](https://genius.com/api-clients) and create a new API client.
+2. Copy the **Client Access Token**.
+3. Add it to your `.env` as `GENIUS_ACCESS_TOKEN`.
+
+If the token is not set, the app will still work using LRCLIB only.
+
 ---
 
 ## GitHub Actions image publish
@@ -45,6 +55,7 @@ SPOTIFY_CLIENT_ID=your_client_id
 SPOTIFY_CLIENT_SECRET=your_client_secret
 REDIRECT_URI=http://<YOUR_NAS_IP>:5011/callback
 PORT=5011
+GENIUS_ACCESS_TOKEN=your_genius_access_token
 ```
 
 Create the tokens file (must exist before the container starts):
