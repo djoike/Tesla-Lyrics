@@ -6,6 +6,7 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const { URLSearchParams } = require('url');
+const { load: cheerioLoad } = require('cheerio');
 
 const app = express();
 const PORT = process.env.PORT || 5011;
@@ -103,8 +104,8 @@ async function spotifyGet(url) {
   }
 }
 
-// ─── Lyrics Fetching (LRCLIB) ────────────────────────────────────────────────
-async function fetchLyrics(trackName, artistName, albumName, durationSec) {
+// ─── Lyrics Fetching (LRCLIB → Genius fallback) ─────────────────────────────
+async function fetchLyricsLrclib(trackName, artistName, albumName, durationSec) {
   try {
     const res = await axios.get('https://lrclib.net/api/get', {
       params: {
@@ -115,19 +116,84 @@ async function fetchLyrics(trackName, artistName, albumName, durationSec) {
       },
       timeout: 8000,
     });
-
-    const data = res.data;
-    // Prefer plain lyrics (no timestamps) for readability
-    const plain = data.plainLyrics || null;
-    const synced = data.syncedLyrics || null;
-    return { plain, synced, found: true };
+    const plain = res.data.plainLyrics || null;
+    if (plain) return plain;
   } catch (err) {
-    if (err.response && err.response.status === 404) {
-      return { plain: 'Lyrics not found.', synced: null, found: false };
+    if (!err.response || err.response.status !== 404) {
+      console.error('LRCLIB error:', err.message);
     }
-    console.error('LRCLIB error:', err.message);
-    return { plain: 'Lyrics not found.', synced: null, found: false };
   }
+  return null;
+}
+
+async function fetchLyricsGenius(trackName, artistName) {
+  if (!process.env.GENIUS_ACCESS_TOKEN) return null;
+
+  try {
+    const searchRes = await axios.get('https://api.genius.com/search', {
+      params: { q: `${trackName} ${artistName}` },
+      headers: { Authorization: `Bearer ${process.env.GENIUS_ACCESS_TOKEN}` },
+      timeout: 8000,
+    });
+
+    const hits = searchRes.data.response.hits;
+    if (!hits || hits.length === 0) return null;
+
+    const match = hits.find((h) => {
+      const t = h.result;
+      return (
+        t.title.toLowerCase().includes(trackName.toLowerCase()) ||
+        trackName.toLowerCase().includes(t.title.toLowerCase())
+      );
+    }) || hits[0];
+
+    const pageUrl = match.result.url;
+
+    const pageRes = await axios.get(pageUrl, {
+      timeout: 10000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; tesla-lyrics/1.0)',
+      },
+    });
+
+    const $ = cheerioLoad(pageRes.data);
+
+    $('script').remove();
+    $('style').remove();
+
+    const containers = $('[class*="Lyrics__Container"], [data-lyrics-container="true"]');
+    if (containers.length === 0) return null;
+
+    const lines = [];
+    containers.each((_i, el) => {
+      $(el).find('br').replaceWith('\n');
+      const text = $(el).text().trim();
+      if (text) lines.push(text);
+    });
+
+    const lyrics = lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    return lyrics || null;
+  } catch (err) {
+    console.error('Genius error:', err.message);
+    return null;
+  }
+}
+
+async function fetchLyrics(trackName, artistName, albumName, durationSec) {
+  const lrclibResult = await fetchLyricsLrclib(trackName, artistName, albumName, durationSec);
+  if (lrclibResult) {
+    console.log(`Lyrics source: LRCLIB`);
+    return { lyrics: lrclibResult, source: 'LRCLIB' };
+  }
+
+  console.log(`LRCLIB miss — trying Genius for: ${artistName} – ${trackName}`);
+  const geniusResult = await fetchLyricsGenius(trackName, artistName);
+  if (geniusResult) {
+    console.log(`Lyrics source: Genius`);
+    return { lyrics: geniusResult, source: 'Genius' };
+  }
+
+  return { lyrics: 'Lyrics not found.', source: null };
 }
 
 // ─── Core Poll Tick ──────────────────────────────────────────────────────────
@@ -169,7 +235,7 @@ async function pollSpotify() {
 
     console.log(`Now playing: ${artistName} – ${trackName}`);
 
-    const { plain } = await fetchLyrics(trackName, artistName, albumName, durationSec);
+    const { lyrics, source } = await fetchLyrics(trackName, artistName, albumName, durationSec);
 
     currentPayload = {
       status: 'playing',
@@ -177,7 +243,8 @@ async function pollSpotify() {
       artist: artistName,
       album: albumName,
       albumArt,
-      lyrics: plain || 'Lyrics not found.',
+      lyrics,
+      source,
       isPolling,
     };
     broadcast(currentPayload);
