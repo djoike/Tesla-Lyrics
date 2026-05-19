@@ -23,8 +23,24 @@
       --btn-active-text: #F4F1EA;
       --indicator-on: #3a8a4a;
       --indicator-off: #8a8880;
+      --divider: rgba(26, 26, 26, 0.1);
       --max-font-size: 28px;
       --min-font-size: 11px;
+    }
+
+    body.dark {
+      --bg: #121212;
+      --text-primary: #e8e6e0;
+      --text-secondary: #a0a09a;
+      --text-muted: #666660;
+      --accent: #e8e6e0;
+      --btn-bg: rgba(232, 230, 224, 0.08);
+      --btn-hover: rgba(232, 230, 224, 0.16);
+      --btn-active-bg: #e8e6e0;
+      --btn-active-text: #121212;
+      --indicator-on: #4caf60;
+      --indicator-off: #666660;
+      --divider: rgba(232, 230, 224, 0.1);
     }
 
     html, body {
@@ -42,48 +58,17 @@
       flex-direction: column;
       height: 100vh;
       width: 100vw;
-      padding: 20px 28px 16px;
-    }
-
-    #header {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      flex-shrink: 0;
-      gap: 16px;
-      min-height: 56px;
-    }
-
-    #track-info {
-      flex: 1;
-      min-width: 0;
-    }
-
-    #track-title {
-      font-size: 18px;
-      font-weight: 700;
-      color: var(--text-primary);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      line-height: 1.3;
-    }
-
-    #track-artist {
-      font-size: 14px;
-      font-weight: 400;
-      color: var(--text-secondary);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      margin-top: 2px;
+      padding: 16px 28px 40px;
     }
 
     #controls {
+      position: fixed;
+      top: 16px;
+      right: 20px;
       display: flex;
       align-items: center;
       gap: 8px;
-      flex-shrink: 0;
+      z-index: 50;
     }
 
     .btn {
@@ -129,13 +114,6 @@
       box-shadow: 0 0 0 3px rgba(58, 138, 74, 0.2);
     }
 
-    #divider {
-      height: 1px;
-      background: rgba(26, 26, 26, 0.1);
-      margin: 12px 0;
-      flex-shrink: 0;
-    }
-
     #lyrics-container {
       flex: 1;
       display: flex;
@@ -146,14 +124,20 @@
     }
 
     #lyrics-text {
-      font-size: var(--max-font-size);
-      line-height: 1.6;
+      line-height: 1.65;
       color: var(--text-primary);
       text-align: center;
       width: 100%;
+      height: 100%;
       white-space: pre-wrap;
       word-break: break-word;
-      transition: font-size 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #lyrics-inner {
+      column-gap: 2em;
     }
 
     #lyrics-text.muted {
@@ -203,24 +187,126 @@
     #timeout-toast.visible {
       transform: translateX(-50%) translateY(0);
     }
+
+    #btn-dark {
+      position: fixed;
+      bottom: 20px;
+      right: 24px;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: none;
+      background: var(--btn-bg);
+      color: var(--text-primary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, transform 0.1s;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+      z-index: 50;
+    }
+
+    #btn-dark:hover {
+      background: var(--btn-hover);
+    }
+
+    #btn-dark:active {
+      transform: scale(0.92);
+    }
+
+    #icon-sun, #icon-moon {
+      position: absolute;
+      transition: opacity 0.2s, transform 0.3s;
+    }
+
+    body:not(.dark) #icon-sun  { opacity: 1; transform: rotate(0deg) scale(1); }
+    body:not(.dark) #icon-moon { opacity: 0; transform: rotate(90deg) scale(0.6); }
+    body.dark #icon-sun        { opacity: 0; transform: rotate(-90deg) scale(0.6); }
+    body.dark #icon-moon       { opacity: 1; transform: rotate(0deg) scale(1); }
+
+    #lyrics-source {
+      position: fixed;
+      bottom: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 11px;
+      color: #b8b5ae;
+      letter-spacing: 0.04em;
+      pointer-events: none;
+      white-space: nowrap;
+      transition: opacity 0.3s;
+      opacity: 0;
+      max-width: calc(100vw - 160px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-align: center;
+      z-index: 10;
+    }
+
+    #lyrics-source.visible {
+      opacity: 1;
+    }
+
+    body.dark #lyrics-source {
+      color: #555550;
+    }
+
+    #page-indicator {
+      position: fixed;
+      bottom: 42px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 46px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      letter-spacing: 0.04em;
+      pointer-events: none;
+      transition: opacity 0.3s;
+      opacity: 0;
+      z-index: 10;
+    }
+
+    #page-indicator.visible {
+      opacity: 1;
+    }
+
+    body.dark #page-indicator {
+      color: var(--text-secondary);
+    }
+
+    #tap-flash {
+      position: fixed;
+      top: 0;
+      width: 50%;
+      height: 100%;
+      pointer-events: none;
+      opacity: 0;
+      z-index: 5;
+      transition: opacity 0.05s ease-in;
+    }
+
+    #tap-flash.left  { left: 0;   background: rgba(26,26,26,0.18); }
+    #tap-flash.right { right: 0;  background: rgba(26,26,26,0.18); }
+    body.dark #tap-flash.left  { background: rgba(232,230,224,0.15); }
+    body.dark #tap-flash.right { background: rgba(232,230,224,0.15); }
+
+    #tap-flash.flash {
+      opacity: 1;
+    }
   </style>
 </head>
 <body>
+  <div id="controls">
+    <div id="status-dot"></div>
+    <button class="btn" id="btn-start">Start</button>
+    <button class="btn" id="btn-stop">Stop</button>
+  </div>
+
   <div id="app">
-    <div id="header">
-      <div id="track-info">
-        <div id="track-title">Tesla Lyrics</div>
-        <div id="track-artist">Connect to Spotify to begin</div>
-      </div>
-      <div id="controls">
-        <div id="status-dot"></div>
-        <button class="btn" id="btn-start">Start</button>
-        <button class="btn" id="btn-stop">Stop</button>
-      </div>
-    </div>
-    <div id="divider"></div>
     <div id="lyrics-container">
-      <div id="lyrics-text" class="muted">Tap Start to load lyrics.</div>
+      <div id="lyrics-text" class="muted"><div id="lyrics-inner">Tap Start to load lyrics.</div></div>
     </div>
   </div>
 
@@ -229,42 +315,179 @@
   </div>
 
   <div id="timeout-toast">⏱ Polling stopped after 1 hour.</div>
+  <div id="lyrics-source"></div>
+  <div id="page-indicator"></div>
+  <div id="tap-flash"></div>
+
+  <button id="btn-dark" aria-label="Toggle dark mode">
+    <svg id="icon-sun" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="5"/>
+      <line x1="12" y1="1" x2="12" y2="3"/>
+      <line x1="12" y1="21" x2="12" y2="23"/>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+      <line x1="1" y1="12" x2="3" y2="12"/>
+      <line x1="21" y1="12" x2="23" y2="12"/>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+    </svg>
+    <svg id="icon-moon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+  </button>
 
   <script>
     const lyricsEl = document.getElementById('lyrics-text');
-    const titleEl = document.getElementById('track-title');
-    const artistEl = document.getElementById('track-artist');
+    const lyricsInner = document.getElementById('lyrics-inner');
     const statusDot = document.getElementById('status-dot');
     const btnStart = document.getElementById('btn-start');
     const btnStop = document.getElementById('btn-stop');
+    const btnDark = document.getElementById('btn-dark');
     const loginBanner = document.getElementById('login-banner');
     const timeoutToast = document.getElementById('timeout-toast');
+    const lyricsSource = document.getElementById('lyrics-source');
+    const pageIndicator = document.getElementById('page-indicator');
+    const tapFlash = document.getElementById('tap-flash');
 
+    let flashTimer = null;
+
+    function triggerFlash(side) {
+      tapFlash.classList.remove('left', 'right', 'flash');
+      void tapFlash.offsetWidth;
+      tapFlash.classList.add(side, 'flash');
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => {
+        tapFlash.style.transition = 'opacity 0.45s ease-out';
+        tapFlash.classList.remove('flash');
+        flashTimer = setTimeout(() => {
+          tapFlash.style.transition = 'opacity 0.05s ease-in';
+        }, 480);
+      }, 188);
+    }
+
+    const LINES_PER_PAGE = 50;
     const MAX_FONT_PX = 28;
     const MIN_FONT_PX = 11;
+    const TWO_COL_THRESHOLD = 12;
 
-    function fitLyricsText() {
-      const container = document.getElementById('lyrics-container');
-      const availH = container.clientHeight;
-      const availW = container.clientWidth;
+    let pages = [];
+    let currentPage = 0;
+    let currentMeta = { source: null, artist: null, title: null };
 
-      lyricsEl.style.fontSize = MAX_FONT_PX + 'px';
+    function applyDarkMode(dark) {
+      document.body.classList.toggle('dark', dark);
+      localStorage.setItem('darkMode', dark ? '1' : '0');
+    }
+
+    applyDarkMode(localStorage.getItem('darkMode') === '1');
+    btnDark.addEventListener('click', () => applyDarkMode(!document.body.classList.contains('dark')));
+
+    function binarySearchFontSize(cols, availW, availH) {
+      lyricsInner.style.columnCount = cols > 1 ? cols : 'auto';
+      lyricsInner.style.width = availW + 'px';
 
       let lo = MIN_FONT_PX;
       let hi = MAX_FONT_PX;
 
       for (let i = 0; i < 20; i++) {
         const mid = (lo + hi) / 2;
-        lyricsEl.style.fontSize = mid + 'px';
-        if (lyricsEl.scrollHeight <= availH && lyricsEl.scrollWidth <= availW) {
+        lyricsInner.style.fontSize = mid + 'px';
+        if (lyricsInner.scrollHeight <= availH && lyricsInner.scrollWidth <= availW) {
           lo = mid;
         } else {
           hi = mid;
         }
       }
 
-      lyricsEl.style.fontSize = Math.floor(lo) + 'px';
+      return Math.floor(lo);
     }
+
+    function fitLyricsText() {
+      const container = document.getElementById('lyrics-container');
+      const availH = container.clientHeight;
+      const availW = container.clientWidth;
+
+      const lineCount = (lyricsInner.textContent.match(/\n/g) || []).length + 1;
+
+      const singleColSize = binarySearchFontSize(1, availW, availH);
+
+      let bestSize = singleColSize;
+      let bestCols = 1;
+
+      if (lineCount >= TWO_COL_THRESHOLD) {
+        const twoColSize = binarySearchFontSize(2, availW, availH);
+        if (twoColSize > singleColSize) {
+          bestSize = twoColSize;
+          bestCols = 2;
+        }
+      }
+
+      lyricsInner.style.columnCount = bestCols > 1 ? bestCols : 'auto';
+      lyricsInner.style.width = availW + 'px';
+      lyricsInner.style.fontSize = bestSize + 'px';
+    }
+
+    function buildPages(text) {
+      if (!text) return [''];
+      const lines = text.split('\n');
+      const result = [];
+      for (let i = 0; i < lines.length; i += LINES_PER_PAGE) {
+        result.push(lines.slice(i, i + LINES_PER_PAGE).join('\n'));
+      }
+      return result.length ? result : [''];
+    }
+
+    function renderPage(index) {
+      if (!pages.length) return;
+      currentPage = Math.max(0, Math.min(index, pages.length - 1));
+
+      lyricsInner.textContent = pages[currentPage];
+
+      if (pages.length > 1) {
+        pageIndicator.textContent = `${currentPage + 1}/${pages.length}`;
+        pageIndicator.classList.add('visible');
+      } else {
+        pageIndicator.classList.remove('visible');
+      }
+
+      requestAnimationFrame(fitLyricsText);
+    }
+
+    function updateBottomMeta() {
+      const { source, artist, title } = currentMeta;
+      const parts = [];
+      if (artist || title) parts.push([artist, title].filter(Boolean).join(' — '));
+      if (source) parts.push(source);
+      if (parts.length) {
+        lyricsSource.textContent = parts.join(' · ');
+        lyricsSource.classList.add('visible');
+      } else {
+        lyricsSource.classList.remove('visible');
+      }
+    }
+
+    function showLyrics(text, isMuted, source, artist, title) {
+      lyricsEl.classList.toggle('muted', !!isMuted);
+      currentMeta = { source, artist, title };
+      updateBottomMeta();
+
+      pages = buildPages(text);
+      currentPage = 0;
+      renderPage(0);
+    }
+
+    document.addEventListener('click', (e) => {
+      if (!pages.length || pages.length <= 1) return;
+      const tag = e.target.tagName;
+      if (tag === 'BUTTON' || e.target.closest('button')) return;
+      if (e.clientX < window.innerWidth / 2) {
+        triggerFlash('left');
+        renderPage(currentPage - 1);
+      } else {
+        triggerFlash('right');
+        renderPage(currentPage + 1);
+      }
+    });
 
     function setPollingUI(active) {
       if (active) {
@@ -276,12 +499,6 @@
         btnStart.classList.remove('active');
         btnStop.classList.add('active');
       }
-    }
-
-    function showLyrics(text, isMuted) {
-      lyricsEl.textContent = text;
-      lyricsEl.classList.toggle('muted', !!isMuted);
-      requestAnimationFrame(fitLyricsText);
     }
 
     function showTimeout() {
@@ -303,22 +520,18 @@
 
       if (payload.status === 'polling_stopped') {
         setPollingUI(false);
-        showLyrics('Polling stopped.', true);
+        showLyrics('Polling stopped.', true, null, null, null);
         return;
       }
 
       setPollingUI(payload.isPolling);
 
       if (payload.status === 'playing' && payload.title) {
-        titleEl.textContent = payload.title;
-        artistEl.textContent = payload.artist || '';
-        showLyrics(payload.lyrics || 'Lyrics not found.', !payload.lyrics);
+        showLyrics(payload.lyrics || 'Lyrics not found.', !payload.lyrics, payload.source, payload.artist, payload.title);
       } else if (payload.status === 'idle') {
-        titleEl.textContent = 'Nothing playing';
-        artistEl.textContent = '';
-        showLyrics('Nothing is currently playing.', true);
+        showLyrics('Nothing is currently playing.', true, null, null, null);
       } else {
-        showLyrics(payload.lyrics || 'Tap Start to load lyrics.', true);
+        showLyrics(payload.lyrics || 'Tap Start to load lyrics.', true, null, null, null);
       }
     }
 
@@ -371,7 +584,7 @@
       if (document.visibilityState === 'visible') acquireWakeLock();
     });
 
-    window.addEventListener('resize', fitLyricsText);
+    window.addEventListener('resize', () => renderPage(currentPage));
 
     checkAuth();
     connectSSE();
