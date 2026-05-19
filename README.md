@@ -13,7 +13,7 @@ The server polls Spotify every 5 seconds while active, fetches lyrics from [LRCL
 ### 1. Create a Spotify Developer App
 
 1. Go to [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) and create a new app.
-2. In the app settings, add a **Redirect URI** matching where you'll run the container, e.g. `http://<YOUR_NAS_IP>:8080/callback`.
+2. In the app settings, add a **Redirect URI** matching where you'll run the container, e.g. `http://<YOUR_NAS_IP>:5011/callback`.
 3. Copy your **Client ID** and **Client Secret**.
 
 > **Important:** The `REDIRECT_URI` in your `.env` must match exactly what you registered in the Spotify dashboard.
@@ -43,8 +43,8 @@ Create `/volume1/docker/tesla-lyrics/.env` with:
 ```env
 SPOTIFY_CLIENT_ID=your_client_id
 SPOTIFY_CLIENT_SECRET=your_client_secret
-REDIRECT_URI=http://<YOUR_NAS_IP>:8080/callback
-PORT=8080
+REDIRECT_URI=http://<YOUR_NAS_IP>:5011/callback
+PORT=5011
 ```
 
 Create the tokens file (must exist before the container starts):
@@ -65,7 +65,7 @@ Default tags include:
 ### 3) Create container in Synology Container Manager
 
 - Image: `ghcr.io/<your-github-user>/tesla-lyrics:latest`
-- Ports: `8080` → `8080`
+- Ports: `5011` → `5011`
 - Mounts:
   - `/volume1/docker/tesla-lyrics/.env` → `/app/.env` (read-only)
   - `/volume1/docker/tesla-lyrics/tokens.json` → `/app/.tokens.json`
@@ -73,12 +73,12 @@ Default tags include:
 
 ### 4) Authenticate with Spotify
 
-Open `http://<YOUR_NAS_IP>:8080/login` in any browser and complete the Spotify login. Tokens are written to `tokens.json` on the NAS and persist across container restarts — you only need to do this once.
+Open `http://<YOUR_NAS_IP>:5011/login` in any browser and complete the Spotify login. Tokens are written to `tokens.json` on the NAS and persist across container restarts — you only need to do this once.
 
 ### 5) Verify
 
-- Open container logs in Container Manager and confirm the server started on port 8080.
-- Open `http://<YOUR_NAS_IP>:8080` in your Tesla browser, tap **Start**, and play a song.
+- Open container logs in Container Manager and confirm the server started on port 5011.
+- Open `http://<YOUR_NAS_IP>:5011` in your Tesla browser, tap **Start**, and play a song.
 
 ---
 
@@ -89,13 +89,13 @@ npm install
 node server.js
 ```
 
-Then visit `http://localhost:8080/login` to authenticate.
+Then visit `http://localhost:5011/login` to authenticate.
 
 ---
 
 ## Usage
 
-1. Open `http://<server-ip>:8080` in your Tesla browser (or bookmark it).
+1. Open `http://<server-ip>:5011` in your Tesla browser (or bookmark it).
 2. Tap **Start** to begin polling. Play a song on Spotify — the lyrics will appear within 5 seconds.
 3. Tap **Stop** when you're done. Polling also auto-stops after 1 hour to avoid rate limits.
 4. The green dot in the top-right indicates polling is active.
