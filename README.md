@@ -73,54 +73,44 @@ Default tags include:
 - `latest`
 - `sha-<commit>`
 
-### 3) Pull the image via SSH
+### 3) Pull and start the container via SSH
 
-Synology Container Manager's UI cannot authenticate with GHCR directly. Pull the image via SSH instead:
+Synology Container Manager's UI cannot authenticate with GHCR directly. Use SSH instead:
 
 ```bash
-ssh admin@<YOUR_NAS_IP>
-sudo docker pull ghcr.io/djoike/tesla-lyrics:latest
+sudo docker pull ghcr.io/djoike/tesla-lyrics:latest && sudo docker run -d \
+  --name tesla-lyrics \
+  --restart unless-stopped \
+  -p 5011:5011 \
+  -v /volume1/docker/tesla-lyrics/.env:/app/.env:ro \
+  -v /volume1/docker/tesla-lyrics/tokens.json:/app/.tokens.json \
+  ghcr.io/djoike/tesla-lyrics:latest
 ```
 
-The image will then appear in Container Manager under **Image**.
-
-### 4) Create container in Synology Container Manager
-
-Open Container Manager → **Image** → select `tesla-lyrics:latest` → **Run**, and configure each step:
-
-**General Settings**
-- Container name: `tesla-lyrics`
-- Enable auto-restart: on
-
-**Port Settings**
-- Local port `5011` → Container port `5011` (TCP)
-
-**Volume / Bind Mounts**
-| Local path | Container path | Mode |
-|---|---|---|
-| `/volume1/docker/tesla-lyrics/.env` | `/app/.env` | Read-only |
-| `/volume1/docker/tesla-lyrics/tokens.json` | `/app/.tokens.json` | Read/Write |
-
-**Environment Variables**
-- Leave empty — all config is loaded from the `.env` bind mount.
-
-### 5) Authenticate with Spotify
+### 4) Authenticate with Spotify
 
 Open `http://<YOUR_NAS_IP>:5011/login` in any browser and complete the Spotify login. Tokens are written to `tokens.json` on the NAS and persist across container restarts — you only need to do this once.
 
-### 6) Verify
+### 5) Verify
 
 - Open container logs in Container Manager and confirm the server started on port 5011.
 - Open `http://<YOUR_NAS_IP>:5011` in your Tesla browser, tap **Start**, and play a song.
 
 ### Updating
 
-Synology's UI cannot pull updated images from GHCR. After pushing new code and the GitHub Actions workflow completes, update via SSH:
+Synology's UI cannot pull updated images from GHCR. After pushing new code and the GitHub Actions workflow completes, run this single command via SSH to pull the new image and recreate the container:
 
 ```bash
-ssh admin@<YOUR_NAS_IP>
-sudo docker pull ghcr.io/djoike/tesla-lyrics:latest
+sudo docker pull ghcr.io/djoike/tesla-lyrics:latest && sudo docker stop tesla-lyrics && sudo docker rm tesla-lyrics && sudo docker run -d \
+  --name tesla-lyrics \
+  --restart unless-stopped \
+  -p 5011:5011 \
+  -v /volume1/docker/tesla-lyrics/.env:/app/.env:ro \
+  -v /volume1/docker/tesla-lyrics/tokens.json:/app/.tokens.json \
+  ghcr.io/djoike/tesla-lyrics:latest
 ```
+
+> Note: `docker restart` alone is not enough — the container must be recreated to pick up the new image.
 
 Then in Container Manager, select the `tesla-lyrics` container → **Action → Restart**.
 
