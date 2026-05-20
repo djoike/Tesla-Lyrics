@@ -4,7 +4,7 @@ A self-hosted Node.js app that displays Spotify lyrics on your Tesla Model 3 bro
 
 ## How it Works
 
-The server polls Spotify every 5 seconds while active, fetches lyrics from [LRCLIB](https://lrclib.net) whenever the track changes, and pushes updates to the browser over Server-Sent Events. The frontend auto-sizes all the lyrics text to fill the screen without scrolling, and uses the Wake Lock API to prevent the Tesla display from sleeping.
+The server polls Spotify every 5 seconds while active, fetches lyrics whenever the track changes, and pushes updates to the browser over Server-Sent Events. The fallback order is [LRCLIB](https://lrclib.net), Genius, Brave Search with deterministic page extraction, then Brave Search with GitHub Models extraction when configured. The frontend auto-sizes all the lyrics text to fill the screen without scrolling, uses the Wake Lock API to prevent the Tesla display from sleeping, and shows the current artist, title, source label, and AI extraction status in the footer.
 
 ---
 
@@ -26,7 +26,19 @@ Genius is used as a fallback when LRCLIB has no lyrics for a track, significantl
 2. Copy the **Client Access Token**.
 3. Add it to your `.env` as `GENIUS_ACCESS_TOKEN`.
 
-If the token is not set, the app will still work using LRCLIB only.
+If the token is not set, the app will still work with LRCLIB and any web fallback config you provide.
+
+### 3. Add Brave Search and GitHub Models config (optional)
+
+Brave Search powers the web fallback stages after LRCLIB and Genius miss. GitHub Models is only used for the final AI extraction step.
+
+- `BRAVE_SEARCH_API_KEY` enables Brave Search candidate lookup.
+- `GITHUB_TOKEN` enables GitHub Models extraction.
+- `GITHUB_MODELS_MODEL` defaults to `gpt-4.1-mini` if you leave it unset.
+- `BRAVE_SEARCH_API_BASE_URL` and `GITHUB_MODELS_API_BASE_URL` let you point at compatible endpoints for testing.
+- `WEB_LYRICS_FETCH_TIMEOUT_MS`, `WEB_LYRICS_MAX_BYTES`, and `WEB_LYRICS_MAX_REDIRECTS` tune the guarded web fetch.
+
+If `BRAVE_SEARCH_API_KEY` is missing, the app stops after the Genius fallback. If `GITHUB_TOKEN` is missing, the AI extraction step is skipped and only deterministic web extraction is used.
 
 ---
 
@@ -56,6 +68,14 @@ SPOTIFY_CLIENT_SECRET=your_client_secret
 REDIRECT_URI=http://<YOUR_NAS_IP>:5011/callback
 PORT=5011
 GENIUS_ACCESS_TOKEN=your_genius_access_token
+BRAVE_SEARCH_API_KEY=your_brave_search_api_key
+GITHUB_TOKEN=your_github_token
+GITHUB_MODELS_MODEL=gpt-4.1-mini
+BRAVE_SEARCH_API_BASE_URL=https://api.search.brave.com/res/v1/web/search
+GITHUB_MODELS_API_BASE_URL=https://models.github.ai/inference
+WEB_LYRICS_FETCH_TIMEOUT_MS=10000
+WEB_LYRICS_MAX_BYTES=1048576
+WEB_LYRICS_MAX_REDIRECTS=3
 ```
 
 Create the tokens file (must exist before the container starts):
@@ -154,5 +174,5 @@ Then visit `http://localhost:5011/login` to authenticate.
 ## Notes
 
 - Tokens are stored in `.tokens.json` — this file is git-ignored and must never be committed.
-- Lyrics are sourced from [LRCLIB](https://lrclib.net), a free, no-auth lyrics API. If a song has no lyrics entry, the UI shows "Lyrics not found."
+- Lyrics are fetched from [LRCLIB](https://lrclib.net) first, then Genius, Brave Search page extraction, and optional GitHub Models extraction. If every step misses, the UI shows "Lyrics not found."
 - The Tesla Model 3 browser does not support all modern APIs. The app is intentionally built with zero frontend dependencies to maximize compatibility.

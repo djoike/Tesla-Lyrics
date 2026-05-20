@@ -328,6 +328,72 @@
       display: flex;
     }
 
+    #loader-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 150;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      background: var(--bg);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+
+    #loader-overlay.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    #loader-song {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: center;
+    }
+
+    #loader-title {
+      font-size: clamp(18px, 4vw, 32px);
+      font-weight: 700;
+      color: var(--text-primary);
+      text-align: center;
+      max-width: 80vw;
+    }
+
+    #loader-artist {
+      font-size: clamp(14px, 2.5vw, 22px);
+      color: var(--text-secondary);
+      text-align: center;
+      max-width: 80vw;
+    }
+
+    #loader-bar-track {
+      width: 60vw;
+      max-width: 480px;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--divider);
+      overflow: hidden;
+    }
+
+    #loader-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--text-primary);
+      border-radius: 3px;
+      transition: width 0.5s ease;
+    }
+
+    #loader-stage {
+      font-size: 13px;
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
     #debug-header {
       display: flex;
       align-items: center;
@@ -439,6 +505,17 @@
     <div id="debug-log"></div>
   </div>
 
+  <div id="loader-overlay">
+    <div id="loader-song">
+      <div id="loader-title"></div>
+      <div id="loader-artist"></div>
+    </div>
+    <div id="loader-bar-track">
+      <div id="loader-bar-fill"></div>
+    </div>
+    <div id="loader-stage"></div>
+  </div>
+
   <script>
     const lyricsEl = document.getElementById('lyrics-text');
     const lyricsInner = document.getElementById('lyrics-inner');
@@ -456,6 +533,11 @@
     const debugLog = document.getElementById('debug-log');
     const btnDebugClose = document.getElementById('btn-debug-close');
     const btnDebugClear = document.getElementById('btn-debug-clear');
+    const loaderOverlay = document.getElementById('loader-overlay');
+    const loaderTitle = document.getElementById('loader-title');
+    const loaderArtist = document.getElementById('loader-artist');
+    const loaderBarFill = document.getElementById('loader-bar-fill');
+    const loaderStage = document.getElementById('loader-stage');
 
     // ── Debug helpers ──────────────────────────────────────────────
     const MAX_DEBUG_LINES = 200;
@@ -509,14 +591,14 @@
       }, 188);
     }
 
-    const LINES_PER_PAGE = 50;
+    const LINES_PER_PAGE = 35;
     const MAX_FONT_PX = 28;
     const MIN_FONT_PX = 11;
     const TWO_COL_THRESHOLD = 12;
 
     let pages = [];
     let currentPage = 0;
-    let currentMeta = { source: null, artist: null, title: null };
+    let currentMeta = { source: null, artist: null, title: null, usedAiExtraction: false };
 
     function applyDarkMode(dark) {
       document.body.classList.toggle('dark', dark);
@@ -598,10 +680,11 @@
     }
 
     function updateBottomMeta() {
-      const { source, artist, title } = currentMeta;
+      const { source, artist, title, usedAiExtraction } = currentMeta;
       const parts = [];
       if (artist || title) parts.push([artist, title].filter(Boolean).join(' — '));
       if (source) parts.push(source);
+      if (usedAiExtraction) parts.push('AI extracted');
       if (parts.length) {
         lyricsSource.textContent = parts.join(' · ');
         lyricsSource.classList.add('visible');
@@ -610,9 +693,9 @@
       }
     }
 
-    function showLyrics(text, isMuted, source, artist, title) {
+    function showLyrics(text, isMuted, source, artist, title, usedAiExtraction = false) {
       lyricsEl.classList.toggle('muted', !!isMuted);
-      currentMeta = { source, artist, title };
+      currentMeta = { source, artist, title, usedAiExtraction };
       updateBottomMeta();
 
       pages = buildPages(text);
@@ -650,9 +733,35 @@
       setTimeout(() => timeoutToast.classList.remove('visible'), 5000);
     }
 
+    function showLoader(title, artist) {
+      loaderTitle.textContent = title || '';
+      loaderArtist.textContent = artist || '';
+      loaderBarFill.style.width = '0%';
+      loaderStage.textContent = '';
+      loaderOverlay.classList.add('visible');
+    }
+
+    function updateProgress(stage, pct) {
+      const labels = {
+        lrclib: 'Checking LRCLIB',
+        genius: 'Trying Genius',
+        brave: 'Searching web',
+        ai: 'AI extraction',
+        done: '',
+      };
+
+      loaderBarFill.style.width = pct + '%';
+      loaderStage.textContent = labels[stage] || '';
+    }
+
+    function hideLoader() {
+      loaderOverlay.classList.remove('visible');
+    }
+
     function handleEvent(payload) {
       if (payload.status === 'timeout') {
         setPollingUI(false);
+        hideLoader();
         showTimeout();
         return;
       }
@@ -664,18 +773,21 @@
 
       if (payload.status === 'polling_stopped') {
         setPollingUI(false);
-        showLyrics('Polling stopped.', true, null, null, null);
+        hideLoader();
+        showLyrics('Polling stopped.', true, null, null, null, false);
         return;
       }
 
       setPollingUI(payload.isPolling);
 
       if (payload.status === 'playing' && payload.title) {
-        showLyrics(payload.lyrics || 'Lyrics not found.', !payload.lyrics, payload.source, payload.artist, payload.title);
+        hideLoader();
+        showLyrics(payload.lyrics || 'Lyrics not found.', !payload.lyrics, payload.source, payload.artist, payload.title, !!payload.usedAiExtraction);
       } else if (payload.status === 'idle') {
-        showLyrics('Nothing is currently playing.', true, null, null, null);
+        hideLoader();
+        showLyrics('Nothing is currently playing.', true, null, null, null, false);
       } else {
-        showLyrics(payload.lyrics || 'Tap Start to load lyrics.', true, null, null, null);
+        showLyrics(payload.lyrics || 'Tap Start to load lyrics.', true, null, null, null, false);
       }
     }
 
@@ -686,6 +798,18 @@
       es.onmessage = (e) => {
         try {
           const payload = JSON.parse(e.data);
+          if (payload.type === 'log') {
+            dbg(payload.msg, payload.level || 'ok');
+            return;
+          }
+          if (payload.type === 'progress') {
+            updateProgress(payload.stage, payload.pct);
+            return;
+          }
+          if (payload.type === 'loading') {
+            showLoader(payload.title, payload.artist);
+            return;
+          }
           dbg(`SSE ← ${JSON.stringify(payload)}`, 'ok');
           handleEvent(payload);
         } catch (err) {

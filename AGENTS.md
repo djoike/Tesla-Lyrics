@@ -4,7 +4,7 @@ Project context for AI agents working in this repository.
 
 ## What this project is
 
-A self-hosted Node.js/Express app that displays Spotify lyrics on a Tesla Model 3 browser in real time. It polls the Spotify API, fetches lyrics from LRCLIB, and pushes updates to the browser over Server-Sent Events.
+A self-hosted Node.js/Express app that displays Spotify lyrics on a Tesla Model 3 browser in real time. It polls the Spotify API, fetches lyrics through a multi-step fallback chain, and pushes updates to the browser over Server-Sent Events.
 
 ## Stack
 
@@ -40,13 +40,21 @@ The app runs on **port 5011** (set via `PORT` env var, default `5011`).
 | `REDIRECT_URI` | Must match exactly what is registered in Spotify dashboard |
 | `PORT` | Server port (default: `5011`) |
 | `GENIUS_ACCESS_TOKEN` | From genius.com/api-clients — optional, enables Genius lyrics fallback |
+| `BRAVE_SEARCH_API_KEY` | Optional, enables Brave Search candidate lookup after LRCLIB and Genius miss |
+| `GITHUB_TOKEN` | Optional, enables GitHub Models lyrics extraction for the final fallback step |
+| `GITHUB_MODELS_MODEL` | Optional, defaults to `gpt-4.1-mini` |
+| `BRAVE_SEARCH_API_BASE_URL` | Optional override for Brave Search API endpoint |
+| `GITHUB_MODELS_API_BASE_URL` | Optional override for GitHub Models inference endpoint |
+| `WEB_LYRICS_FETCH_TIMEOUT_MS` | Optional timeout for guarded web lyrics fetches |
+| `WEB_LYRICS_MAX_BYTES` | Optional max response size for guarded web lyrics fetches |
+| `WEB_LYRICS_MAX_REDIRECTS` | Optional redirect cap for guarded web lyrics fetches |
 
 ## Key backend behaviour
 
 - **Token storage:** Spotify tokens are persisted to `.tokens.json` in the app root. This file must be bind-mounted on the host so tokens survive container restarts. It must be created (`touch`) before the container starts or Docker will create a directory instead.
 - **Polling state machine:** `isPolling` bool, toggled via `POST /api/start` and `POST /api/stop`. Auto-stops after 60 minutes.
 - **Song change detection:** Tracks `currentTrackId`; only fetches lyrics and broadcasts SSE when the track ID changes.
-- **Lyrics:** Fetched from `https://lrclib.net/api/get` first. If LRCLIB returns nothing, falls back to Genius (`https://api.genius.com/search` + page scrape via cheerio). Returns `"Lyrics not found."` if both fail — never throws.
+- **Lyrics:** Fetched in this order: `https://lrclib.net/api/get`, Genius (`https://api.genius.com/search` + page scrape via cheerio), Brave Search deterministic page extraction, then Brave Search + GitHub Models extraction when configured. Returns `"Lyrics not found."` if every step fails, and includes `source` plus `usedAiExtraction` in the SSE payload for footer metadata.
 - **SSE:** `/events` endpoint. Sends current state immediately on connect. Heartbeat comment every 30 seconds to keep the Tesla browser connection alive.
 
 ## Key frontend behaviour
@@ -55,6 +63,7 @@ The app runs on **port 5011** (set via `PORT` env var, default `5011`).
 - **Wake Lock:** `navigator.wakeLock.request('screen')` called on load and re-acquired on `visibilitychange`.
 - **SSE reconnect:** Auto-reconnects with 3-second backoff on error.
 - **Auth check:** On load, calls `GET /api/status`. Shows a login banner if `authenticated` is false.
+- **Footer metadata:** Bottom footer renders `Artist — Title · <source label>` and appends `· AI extracted` only when `usedAiExtraction` is true.
 
 ## Deployment (Synology NAS)
 
