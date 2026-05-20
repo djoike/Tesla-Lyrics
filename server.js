@@ -3,6 +3,7 @@
 require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
+const crypto = require('crypto');
 const fs = require('fs');
 const net = require('net');
 const path = require('path');
@@ -12,6 +13,11 @@ const { load: cheerioLoad } = require('cheerio');
 
 const app = express();
 const PORT = process.env.PORT || 5011;
+const PIN_CODE = process.env.PIN_CODE || '290585';
+const COOKIE_SECRET = process.env.COOKIE_SECRET || 'tesla-lyrics-secret';
+const COOKIE_NAME = 'tl_auth';
+const AUTH_COOKIE_MAX_AGE = 31536000;
+const INDEX_FILE = path.join(__dirname, 'public/index.html');
 const WEB_LYRICS_CONFIG = {
   braveSearchApiKey: process.env.BRAVE_SEARCH_API_KEY || null,
   githubToken: process.env.GITHUB_TOKEN || null,
@@ -22,6 +28,47 @@ const WEB_LYRICS_CONFIG = {
   maxBytes: Number.parseInt(process.env.WEB_LYRICS_MAX_BYTES || '1048576', 10),
   maxRedirects: Number.parseInt(process.env.WEB_LYRICS_MAX_REDIRECTS || '3', 10),
 };
+
+function createAuthCookieValue() {
+  return crypto.createHmac('sha256', COOKIE_SECRET).update('authenticated').digest('hex');
+}
+
+function parseCookies(cookieHeader) {
+  return (cookieHeader || '').split(';').reduce((cookies, pair) => {
+    const trimmedPair = pair.trim();
+    if (!trimmedPair) return cookies;
+
+    const separatorIndex = trimmedPair.indexOf('=');
+    if (separatorIndex === -1) return cookies;
+
+    const name = trimmedPair.slice(0, separatorIndex).trim();
+    const value = trimmedPair.slice(separatorIndex + 1).trim();
+    cookies[name] = decodeURIComponent(value);
+    return cookies;
+  }, {});
+}
+
+function hasValidPinCookie(req) {
+  const cookies = parseCookies(req.headers.cookie);
+  const cookieValue = cookies[COOKIE_NAME];
+  if (!cookieValue) return false;
+
+  const expectedValue = createAuthCookieValue();
+  const cookieBuffer = Buffer.from(cookieValue);
+  const expectedBuffer = Buffer.from(expectedValue);
+
+  if (cookieBuffer.length !== expectedBuffer.length) return false;
+
+  try {
+    return crypto.timingSafeEqual(cookieBuffer, expectedBuffer);
+  } catch (_) {
+    return false;
+  }
+}
+
+function setAuthCookie(res) {
+  res.setHeader('Set-Cookie', `${COOKIE_NAME}=${createAuthCookieValue()}; Path=/; HttpOnly; Max-Age=${AUTH_COOKIE_MAX_AGE}`);
+}
 
 // ─── Token Store ────────────────────────────────────────────────────────────
 const TOKEN_FILE = path.join(__dirname, '.tokens.json');
@@ -1058,6 +1105,33 @@ function stopPolling() {
 }
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
+
+app.use(express.json());
+
+app.post('/pin', (req, res) => {
+  if (req.body?.pin !== PIN_CODE) {
+    return res.status(401).json({ ok: false });
+  }
+
+  setAuthCookie(res);
+  return res.json({ ok: true });
+});
+
+app.use((req, res, next) => {
+  if (hasValidPinCookie(req)) {
+    return next();
+  }
+
+  if (req.path === '/') {
+    return res.sendFile(INDEX_FILE);
+  }
+
+  if (req.path === '/api/status') {
+    return res.status(401).json({ pinRequired: true });
+  }
+
+  return res.status(401).json({ error: 'unauthorized', pinRequired: true });
+});
 
 // Serve static frontend
 app.use(express.static(path.join(__dirname, 'public')));

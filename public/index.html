@@ -53,6 +53,24 @@
       -webkit-font-smoothing: antialiased;
     }
 
+    body.pin-locked {
+      overflow: hidden;
+    }
+
+    body.pin-locked #app,
+    body.pin-locked #controls,
+    body.pin-locked #login-banner,
+    body.pin-locked #timeout-toast,
+    body.pin-locked #lyrics-source,
+    body.pin-locked #page-indicator,
+    body.pin-locked #tap-flash,
+    body.pin-locked #btn-debug,
+    body.pin-locked #debug-overlay,
+    body.pin-locked #loader-overlay {
+      visibility: hidden;
+      pointer-events: none;
+    }
+
     #app {
       display: flex;
       flex-direction: column;
@@ -166,6 +184,91 @@
 
     #login-banner.visible {
       display: block;
+    }
+
+    #pin-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 300;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 32px;
+      padding: 24px;
+    }
+
+    #pin-overlay.hidden {
+      display: none;
+    }
+
+    #pin-display {
+      min-height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 48px;
+      letter-spacing: 16px;
+      color: var(--text-primary);
+      text-align: center;
+      padding-left: 16px;
+    }
+
+    #pin-display.shake {
+      animation: pinShake 0.4s ease;
+    }
+
+    #pin-pad {
+      width: min(380px, 90vw);
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    .pin-btn {
+      width: 100%;
+      aspect-ratio: 1;
+      border: none;
+      border-radius: 16px;
+      background: var(--btn-bg);
+      color: var(--text-primary);
+      cursor: pointer;
+      font-size: 32px;
+      font-weight: 600;
+      transition: background 0.15s, transform 0.1s;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    .pin-btn:hover {
+      background: var(--btn-hover);
+    }
+
+    .pin-btn:active {
+      transform: scale(0.96);
+    }
+
+    #pin-error {
+      min-height: 20px;
+      color: #e05555;
+      font-size: 16px;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    #pin-error.visible {
+      opacity: 1;
+    }
+
+    @keyframes pinShake {
+      0%, 100% { transform: translateX(0); }
+      15% { transform: translateX(-10px); }
+      30% { transform: translateX(10px); }
+      45% { transform: translateX(-8px); }
+      60% { transform: translateX(8px); }
+      75% { transform: translateX(-4px); }
+      90% { transform: translateX(4px); }
     }
 
     #timeout-toast {
@@ -516,6 +619,25 @@
     <div id="loader-stage"></div>
   </div>
 
+  <div id="pin-overlay" class="hidden">
+    <div id="pin-display"><span id="pin-dots"></span></div>
+    <div id="pin-pad">
+      <button class="pin-btn" type="button" data-pin-digit="1">1</button>
+      <button class="pin-btn" type="button" data-pin-digit="2">2</button>
+      <button class="pin-btn" type="button" data-pin-digit="3">3</button>
+      <button class="pin-btn" type="button" data-pin-digit="4">4</button>
+      <button class="pin-btn" type="button" data-pin-digit="5">5</button>
+      <button class="pin-btn" type="button" data-pin-digit="6">6</button>
+      <button class="pin-btn" type="button" data-pin-digit="7">7</button>
+      <button class="pin-btn" type="button" data-pin-digit="8">8</button>
+      <button class="pin-btn" type="button" data-pin-digit="9">9</button>
+      <button class="pin-btn" type="button" id="pin-backspace" aria-label="Backspace">←</button>
+      <button class="pin-btn" type="button" data-pin-digit="0">0</button>
+      <button class="pin-btn" type="button" id="pin-submit" aria-label="Submit PIN">✓</button>
+    </div>
+    <div id="pin-error">Incorrect PIN</div>
+  </div>
+
   <script>
     const lyricsEl = document.getElementById('lyrics-text');
     const lyricsInner = document.getElementById('lyrics-inner');
@@ -538,10 +660,24 @@
     const loaderArtist = document.getElementById('loader-artist');
     const loaderBarFill = document.getElementById('loader-bar-fill');
     const loaderStage = document.getElementById('loader-stage');
+    const pinOverlay = document.getElementById('pin-overlay');
+    const pinDisplay = document.getElementById('pin-display');
+    const pinDots = document.getElementById('pin-dots');
+    const pinError = document.getElementById('pin-error');
+    const pinBackspace = document.getElementById('pin-backspace');
+    const pinSubmit = document.getElementById('pin-submit');
+    const pinDigitButtons = Array.from(document.querySelectorAll('[data-pin-digit]'));
 
     // ── Debug helpers ──────────────────────────────────────────────
     const MAX_DEBUG_LINES = 200;
     let debugLineCount = 0;
+    let pinEntry = '';
+    let pinErrorTimer = null;
+    let pinResetTimer = null;
+    let pinSubmitting = false;
+    let eventSource = null;
+    let sseReconnectTimer = null;
+    let appBooted = false;
 
     function dbg(msg, level = 'ok') {
       debugLineCount++;
@@ -607,6 +743,106 @@
 
     applyDarkMode(localStorage.getItem('darkMode') === '1');
     btnDark.addEventListener('click', () => applyDarkMode(!document.body.classList.contains('dark')));
+
+    function updatePinDots() {
+      pinDots.textContent = '●'.repeat(pinEntry.length);
+    }
+
+    function clearPinError() {
+      pinError.classList.remove('visible');
+      pinDisplay.classList.remove('shake');
+      clearTimeout(pinErrorTimer);
+      pinErrorTimer = null;
+    }
+
+    function setPinLocked(locked) {
+      document.body.classList.toggle('pin-locked', locked);
+      pinOverlay.classList.toggle('hidden', !locked);
+      if (locked) {
+        loginBanner.classList.remove('visible');
+        hideLoader();
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+        clearTimeout(sseReconnectTimer);
+        sseReconnectTimer = null;
+      } else if (appBooted && !eventSource && !sseReconnectTimer) {
+        connectSSE();
+      }
+    }
+
+    function clearPinEntry() {
+      pinEntry = '';
+      updatePinDots();
+    }
+
+    function showPinErrorState() {
+      pinError.classList.add('visible');
+      pinDisplay.classList.remove('shake');
+      void pinDisplay.offsetWidth;
+      pinDisplay.classList.add('shake');
+      clearTimeout(pinErrorTimer);
+      pinErrorTimer = setTimeout(() => clearPinError(), 600);
+    }
+
+    async function submitPin() {
+      if (!pinEntry || pinSubmitting) return;
+
+      pinSubmitting = true;
+      clearPinError();
+      clearTimeout(pinResetTimer);
+
+      try {
+        const res = await fetch('/pin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: pinEntry }),
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (res.ok && data.ok) {
+          clearPinEntry();
+          setPinLocked(false);
+          await bootstrapApp();
+          return;
+        }
+
+        showPinErrorState();
+        pinResetTimer = setTimeout(() => {
+          clearPinEntry();
+          clearPinError();
+        }, 600);
+      } catch (err) {
+        dbg(`PIN error: ${err}`, 'err');
+        showPinErrorState();
+      } finally {
+        pinSubmitting = false;
+      }
+    }
+
+    function appendPinDigit(digit) {
+      if (pinSubmitting || pinEntry.length >= 6) return;
+      pinEntry += digit;
+      updatePinDots();
+      clearPinError();
+      if (pinEntry.length === 6) {
+        submitPin();
+      }
+    }
+
+    pinDigitButtons.forEach((button) => {
+      button.addEventListener('click', () => appendPinDigit(button.dataset.pinDigit));
+    });
+
+    pinBackspace.addEventListener('click', () => {
+      if (pinSubmitting || !pinEntry.length) return;
+      pinEntry = pinEntry.slice(0, -1);
+      updatePinDots();
+      clearPinError();
+    });
+
+    pinSubmit.addEventListener('click', () => submitPin());
 
     function binarySearchFontSize(cols, availW, availH) {
       lyricsInner.style.columnCount = cols > 1 ? cols : 'auto';
@@ -792,8 +1028,12 @@
     }
 
     function connectSSE() {
+      if (eventSource) {
+        eventSource.close();
+      }
       dbg('SSE: connecting to /events…', 'info');
       const es = new EventSource('/events');
+      eventSource = es;
 
       es.onmessage = (e) => {
         try {
@@ -818,9 +1058,12 @@
       };
 
       es.onerror = () => {
+        if (eventSource !== es) return;
         dbg('SSE: connection error — reconnecting in 3s.', 'err');
         es.close();
-        setTimeout(connectSSE, 3000);
+        eventSource = null;
+        clearTimeout(sseReconnectTimer);
+        sseReconnectTimer = setTimeout(connectSSE, 3000);
       };
     }
 
@@ -830,6 +1073,12 @@
         const res = await fetch(endpoint, { method: 'POST' });
         dbg(`API ← ${endpoint} HTTP ${res.status}`, res.ok ? 'ok' : 'warn');
         if (res.status === 401) {
+          const data = await res.json().catch(() => ({}));
+          if (data.pinRequired) {
+            dbg('API: 401 — PIN required.', 'warn');
+            setPinLocked(true);
+            return;
+          }
           dbg('API: 401 — not authenticated, showing login banner.', 'warn');
           loginBanner.classList.add('visible');
         }
@@ -845,14 +1094,38 @@
       dbg('AUTH → GET /api/status', 'info');
       try {
         const res = await fetch('/api/status');
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
+
+        if (res.status === 401 && data.pinRequired) {
+          dbg('AUTH ← PIN required', 'warn');
+          setPinLocked(true);
+          return { pinRequired: true, authenticated: false, isPolling: false };
+        }
+
+        setPinLocked(false);
         dbg(`AUTH ← authenticated=${data.authenticated} isPolling=${data.isPolling}`, data.authenticated ? 'ok' : 'warn');
         if (!data.authenticated) {
           loginBanner.classList.add('visible');
+        } else {
+          loginBanner.classList.remove('visible');
         }
         setPollingUI(data.isPolling);
+        return data;
       } catch (err) {
         dbg(`AUTH error: ${err}`, 'err');
+        return null;
+      }
+    }
+
+    async function bootstrapApp() {
+      const authState = await checkAuth();
+      if (!authState || authState.pinRequired) {
+        return;
+      }
+
+      if (!appBooted) {
+        connectSSE();
+        appBooted = true;
       }
     }
 
@@ -875,8 +1148,8 @@
 
     window.addEventListener('resize', () => renderPage(currentPage));
 
-    checkAuth();
-    connectSSE();
+    updatePinDots();
+    bootstrapApp();
     acquireWakeLock();
   </script>
 </body>
