@@ -231,7 +231,7 @@
       bottom: 12px;
       left: 50%;
       transform: translateX(-50%);
-      font-size: 11px;
+      font-size: 22px;
       color: #b8b5ae;
       letter-spacing: 0.04em;
       pointer-events: none;
@@ -255,7 +255,7 @@
 
     #page-indicator {
       position: fixed;
-      bottom: 42px;
+      bottom: 52px;
       left: 50%;
       transform: translateX(-50%);
       font-size: 46px;
@@ -295,6 +295,96 @@
     #tap-flash.flash {
       opacity: 1;
     }
+
+    /* ── Debug overlay ── */
+    #btn-debug {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 44px;
+      height: 44px;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      z-index: 200;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    #debug-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.92);
+      color: #c8ffc8;
+      font-family: 'Menlo', 'Consolas', monospace;
+      font-size: 13px;
+      line-height: 1.5;
+      z-index: 300;
+      flex-direction: column;
+    }
+
+    #debug-overlay.visible {
+      display: flex;
+    }
+
+    #debug-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 18px 10px;
+      border-bottom: 1px solid rgba(200, 255, 200, 0.15);
+      flex-shrink: 0;
+    }
+
+    #debug-header span {
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: 0.05em;
+      color: #7fff7f;
+    }
+
+    #btn-debug-close {
+      background: rgba(200, 255, 200, 0.12);
+      border: none;
+      color: #c8ffc8;
+      font-size: 18px;
+      line-height: 1;
+      padding: 6px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #btn-debug-clear {
+      background: rgba(200, 255, 200, 0.08);
+      border: none;
+      color: #c8ffc8;
+      font-size: 12px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      margin-right: 8px;
+    }
+
+    #debug-log {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 18px 16px;
+    }
+
+    .dbg-line {
+      padding: 3px 0;
+      border-bottom: 1px solid rgba(200, 255, 200, 0.06);
+      word-break: break-all;
+      white-space: pre-wrap;
+    }
+
+    .dbg-line.err  { color: #ff8080; }
+    .dbg-line.warn { color: #ffd080; }
+    .dbg-line.info { color: #80d0ff; }
+    .dbg-line.ok   { color: #c8ffc8; }
   </style>
 </head>
 <body>
@@ -336,6 +426,19 @@
     </svg>
   </button>
 
+  <button id="btn-debug" aria-label="Open debug log"></button>
+
+  <div id="debug-overlay">
+    <div id="debug-header">
+      <span>🛠 Debug Log</span>
+      <div style="display:flex;align-items:center">
+        <button id="btn-debug-clear">Clear</button>
+        <button id="btn-debug-close">✕</button>
+      </div>
+    </div>
+    <div id="debug-log"></div>
+  </div>
+
   <script>
     const lyricsEl = document.getElementById('lyrics-text');
     const lyricsInner = document.getElementById('lyrics-inner');
@@ -348,6 +451,47 @@
     const lyricsSource = document.getElementById('lyrics-source');
     const pageIndicator = document.getElementById('page-indicator');
     const tapFlash = document.getElementById('tap-flash');
+    const btnDebug = document.getElementById('btn-debug');
+    const debugOverlay = document.getElementById('debug-overlay');
+    const debugLog = document.getElementById('debug-log');
+    const btnDebugClose = document.getElementById('btn-debug-close');
+    const btnDebugClear = document.getElementById('btn-debug-clear');
+
+    // ── Debug helpers ──────────────────────────────────────────────
+    const MAX_DEBUG_LINES = 200;
+    let debugLineCount = 0;
+
+    function dbg(msg, level = 'ok') {
+      debugLineCount++;
+      const now = new Date();
+      const ts = now.toTimeString().slice(0, 8);
+      const line = document.createElement('div');
+      line.className = `dbg-line ${level}`;
+      line.textContent = `[${ts}] ${msg}`;
+      debugLog.appendChild(line);
+      // Trim old entries to keep memory bounded
+      if (debugLineCount > MAX_DEBUG_LINES) {
+        debugLog.removeChild(debugLog.firstChild);
+        debugLineCount--;
+      }
+      // Auto-scroll to bottom if overlay is open
+      if (debugOverlay.classList.contains('visible')) {
+        debugLog.scrollTop = debugLog.scrollHeight;
+      }
+    }
+
+    btnDebug.addEventListener('click', () => {
+      debugOverlay.classList.add('visible');
+      debugLog.scrollTop = debugLog.scrollHeight;
+    });
+    btnDebugClose.addEventListener('click', () => debugOverlay.classList.remove('visible'));
+    btnDebugClear.addEventListener('click', () => {
+      debugLog.innerHTML = '';
+      debugLineCount = 0;
+      dbg('Log cleared.', 'info');
+    });
+
+    dbg('App initialised.', 'info');
 
     let flashTimer = null;
 
@@ -536,48 +680,69 @@
     }
 
     function connectSSE() {
+      dbg('SSE: connecting to /events…', 'info');
       const es = new EventSource('/events');
 
       es.onmessage = (e) => {
         try {
-          handleEvent(JSON.parse(e.data));
-        } catch (_) {}
+          const payload = JSON.parse(e.data);
+          dbg(`SSE ← ${JSON.stringify(payload)}`, 'ok');
+          handleEvent(payload);
+        } catch (err) {
+          dbg(`SSE parse error: ${err}`, 'err');
+        }
       };
 
       es.onerror = () => {
+        dbg('SSE: connection error — reconnecting in 3s.', 'err');
         es.close();
         setTimeout(connectSSE, 3000);
       };
     }
 
     async function apiCall(endpoint) {
+      dbg(`API → POST ${endpoint}`, 'info');
       try {
         const res = await fetch(endpoint, { method: 'POST' });
+        dbg(`API ← ${endpoint} HTTP ${res.status}`, res.ok ? 'ok' : 'warn');
         if (res.status === 401) {
+          dbg('API: 401 — not authenticated, showing login banner.', 'warn');
           loginBanner.classList.add('visible');
         }
-      } catch (_) {}
+      } catch (err) {
+        dbg(`API error ${endpoint}: ${err}`, 'err');
+      }
     }
 
     btnStart.addEventListener('click', () => apiCall('/api/start'));
     btnStop.addEventListener('click', () => apiCall('/api/stop'));
 
     async function checkAuth() {
+      dbg('AUTH → GET /api/status', 'info');
       try {
         const res = await fetch('/api/status');
         const data = await res.json();
+        dbg(`AUTH ← authenticated=${data.authenticated} isPolling=${data.isPolling}`, data.authenticated ? 'ok' : 'warn');
         if (!data.authenticated) {
           loginBanner.classList.add('visible');
         }
         setPollingUI(data.isPolling);
-      } catch (_) {}
+      } catch (err) {
+        dbg(`AUTH error: ${err}`, 'err');
+      }
     }
 
     async function acquireWakeLock() {
-      if (!('wakeLock' in navigator)) return;
+      if (!('wakeLock' in navigator)) {
+        dbg('Wake lock: not supported in this browser.', 'warn');
+        return;
+      }
       try {
         await navigator.wakeLock.request('screen');
-      } catch (_) {}
+        dbg('Wake lock: acquired.', 'ok');
+      } catch (err) {
+        dbg(`Wake lock error: ${err}`, 'err');
+      }
     }
 
     document.addEventListener('visibilitychange', () => {
