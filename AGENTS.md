@@ -73,6 +73,19 @@ The app runs on **port 5011** (set via `PORT` env var, default `5011`).
 - Restart policy: `unless-stopped`
 - First-time auth: visit `http://<NAS_IP>:5011/login` once after container start
 
+### Update procedure
+
+1. Push `master` — GitHub Actions builds and pushes the image to GHCR automatically. Wait for the workflow to go green before proceeding.
+2. In Synology router settings, activate port forward for port **25**.
+3. In Synology DSM, enable SSH access.
+4. Connect: `ssh MortenMonsted@ds.monsted.org -p 25`
+5. Run the update command:
+   ```
+   sudo docker pull ghcr.io/djoike/tesla-lyrics:latest && sudo docker stop tesla-lyrics && sudo docker rm tesla-lyrics && sudo docker run -d --name tesla-lyrics --restart unless-stopped -p 5011:5011 -v /volume1/docker/tesla-lyrics/.env:/app/.env:ro -v /volume1/docker/tesla-lyrics/tokens.json:/app/.tokens.json ghcr.io/djoike/tesla-lyrics:latest
+   ```
+6. Disable SSH in DSM.
+7. Disable the port 25 forward in the router.
+
 ## What NOT to do
 
 - Do not add a build step or TypeScript — the project is intentionally plain JS
