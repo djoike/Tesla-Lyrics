@@ -24,8 +24,6 @@
       --indicator-on: #3a8a4a;
       --indicator-off: #8a8880;
       --divider: rgba(26, 26, 26, 0.1);
-      --max-font-size: 28px;
-      --min-font-size: 11px;
     }
 
     body.dark {
@@ -76,7 +74,7 @@
       flex-direction: column;
       height: 100vh;
       width: 100vw;
-      padding: 16px 28px 40px;
+      padding: 46px 28px 40px;
     }
 
     #controls {
@@ -155,6 +153,7 @@
     }
 
     #lyrics-inner {
+      font-size: 30px;
       column-gap: 2em;
     }
 
@@ -358,11 +357,10 @@
 
     #page-indicator {
       position: fixed;
-      bottom: 52px;
-      left: 50%;
-      transform: translateX(-50%);
-      font-size: 46px;
-      font-weight: 700;
+      bottom: 20px;
+      right: 76px;
+      font-size: 38px;
+      font-weight: 600;
       color: var(--text-secondary);
       letter-spacing: 0.04em;
       pointer-events: none;
@@ -640,6 +638,7 @@
 
   <script>
     const lyricsEl = document.getElementById('lyrics-text');
+    const lyricsContainer = document.getElementById('lyrics-container');
     const lyricsInner = document.getElementById('lyrics-inner');
     const statusDot = document.getElementById('status-dot');
     const btnStart = document.getElementById('btn-start');
@@ -727,13 +726,12 @@
       }, 188);
     }
 
-    const LINES_PER_PAGE = 35;
-    const MAX_FONT_PX = 28;
-    const MIN_FONT_PX = 11;
-    const TWO_COL_THRESHOLD = 12;
+    const LINES_PER_PAGE = 29;
+    const TWO_COL_THRESHOLD = 20;
 
     let pages = [];
     let currentPage = 0;
+    let songUseTwoColumns = false;
     let currentMeta = { source: null, artist: null, title: null, usedAiExtraction: false };
 
     function applyDarkMode(dark) {
@@ -844,58 +842,44 @@
 
     pinSubmit.addEventListener('click', () => submitPin());
 
-    function binarySearchFontSize(cols, availW, availH) {
-      lyricsInner.style.columnCount = cols > 1 ? cols : 'auto';
-      lyricsInner.style.width = availW + 'px';
-
-      let lo = MIN_FONT_PX;
-      let hi = MAX_FONT_PX;
-
-      for (let i = 0; i < 20; i++) {
-        const mid = (lo + hi) / 2;
-        lyricsInner.style.fontSize = mid + 'px';
-        if (lyricsInner.scrollHeight <= availH && lyricsInner.scrollWidth <= availW) {
-          lo = mid;
-        } else {
-          hi = mid;
-        }
-      }
-
-      return Math.floor(lo);
-    }
-
-    function fitLyricsText() {
-      const container = document.getElementById('lyrics-container');
-      const availH = container.clientHeight;
-      const availW = container.clientWidth;
-
-      const lineCount = (lyricsInner.textContent.match(/\n/g) || []).length + 1;
-
-      const singleColSize = binarySearchFontSize(1, availW, availH);
-
-      let bestSize = singleColSize;
-      let bestCols = 1;
-
-      if (lineCount >= TWO_COL_THRESHOLD) {
-        const twoColSize = binarySearchFontSize(2, availW, availH);
-        if (twoColSize > singleColSize) {
-          bestSize = twoColSize;
-          bestCols = 2;
-        }
-      }
-
-      lyricsInner.style.columnCount = bestCols > 1 ? bestCols : 'auto';
-      lyricsInner.style.width = availW + 'px';
-      lyricsInner.style.fontSize = bestSize + 'px';
-    }
-
     function buildPages(text) {
       if (!text) return [''];
       const lines = text.split('\n');
-      const result = [];
-      for (let i = 0; i < lines.length; i += LINES_PER_PAGE) {
-        result.push(lines.slice(i, i + LINES_PER_PAGE).join('\n'));
+      const containerH = lyricsContainer.clientHeight;
+      songUseTwoColumns = lines.length >= TWO_COL_THRESHOLD;
+
+      if (!containerH) {
+        const result = [];
+        for (let i = 0; i < lines.length; i += LINES_PER_PAGE) {
+          result.push(lines.slice(i, i + LINES_PER_PAGE).join('\n'));
+        }
+        return result.length ? result : [''];
       }
+
+      lyricsInner.style.visibility = 'hidden';
+      lyricsInner.style.columnCount = songUseTwoColumns ? '2' : 'auto';
+      const result = [];
+      let i = 0;
+
+      while (i < lines.length) {
+        let lo = 1, hi = lines.length - i, fits = 1;
+        while (lo <= hi) {
+          const mid = Math.floor((lo + hi) / 2);
+          lyricsInner.textContent = lines.slice(i, i + mid).join('\n');
+          if (lyricsInner.offsetHeight <= containerH) {
+            fits = mid;
+            lo = mid + 1;
+          } else {
+            hi = mid - 1;
+          }
+        }
+        result.push(lines.slice(i, i + fits).join('\n'));
+        i += fits;
+      }
+
+      lyricsInner.style.visibility = '';
+      lyricsInner.textContent = '';
+      lyricsInner.style.columnCount = 'auto';
       return result.length ? result : [''];
     }
 
@@ -904,6 +888,7 @@
       currentPage = Math.max(0, Math.min(index, pages.length - 1));
 
       lyricsInner.textContent = pages[currentPage];
+      lyricsInner.style.columnCount = songUseTwoColumns ? '2' : 'auto';
 
       if (pages.length > 1) {
         pageIndicator.textContent = `${currentPage + 1}/${pages.length}`;
@@ -911,8 +896,6 @@
       } else {
         pageIndicator.classList.remove('visible');
       }
-
-      requestAnimationFrame(fitLyricsText);
     }
 
     function updateBottomMeta() {
@@ -1038,6 +1021,11 @@
       es.onmessage = (e) => {
         try {
           const payload = JSON.parse(e.data);
+          if (payload.type === 'page') {
+            const delta = payload.direction === 'next' ? 1 : -1;
+            renderPage(currentPage + delta);
+            return;
+          }
           if (payload.type === 'log') {
             dbg(payload.msg, payload.level || 'ok');
             return;
@@ -1145,8 +1133,6 @@
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') acquireWakeLock();
     });
-
-    window.addEventListener('resize', () => renderPage(currentPage));
 
     updatePinDots();
     bootstrapApp();
