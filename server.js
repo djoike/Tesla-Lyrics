@@ -1046,15 +1046,18 @@ async function prefetchNextSong() {
   const durationSec = Math.round((nextTrack.duration_ms || 0) / 1000);
 
   broadcastLog(`Prefetch: starting lyrics fetch for "${title}" by ${artist}`, 'info');
+  broadcast({ type: 'prefetch', state: 'started' });
 
   try {
     const { lyrics, source, usedAiExtraction } = await fetchLyrics(title, artist, album, durationSec);
     if (prefetchInFlight === trackId) {
       prefetchCache = { trackId, title, artist, album, albumArt, lyrics, source, usedAiExtraction: !!usedAiExtraction };
       broadcastLog(`Prefetch: cached lyrics for "${title}"`, 'ok');
+      broadcast({ type: 'prefetch', state: 'done' });
     }
   } catch (err) {
     broadcastLog(`Prefetch: failed for "${title}" — ${err.message}`, 'warn');
+    broadcast({ type: 'prefetch', state: 'failed' });
   } finally {
     if (prefetchInFlight === trackId) prefetchInFlight = null;
   }

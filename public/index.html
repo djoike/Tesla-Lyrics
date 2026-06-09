@@ -62,6 +62,7 @@
     body.pin-locked #lyrics-source,
     body.pin-locked #page-indicator,
     body.pin-locked #tap-flash,
+    body.pin-locked #prefetch-indicator,
     body.pin-locked #btn-debug,
     body.pin-locked #debug-overlay,
     body.pin-locked #loader-overlay {
@@ -397,6 +398,66 @@
       opacity: 1;
     }
 
+    #prefetch-indicator {
+      position: fixed;
+      bottom: 12px;
+      left: 12px;
+      width: 32px;
+      height: 32px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.4s;
+      z-index: 20;
+    }
+
+    #prefetch-indicator.visible {
+      opacity: 1;
+    }
+
+    #prefetch-indicator svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    #prefetch-indicator .prefetch-track {
+      fill: none;
+      stroke: var(--text-muted);
+      stroke-opacity: 0.2;
+      stroke-width: 2;
+    }
+
+    #prefetch-arc {
+      fill: none;
+      stroke: var(--text-secondary);
+      stroke-opacity: 0.45;
+      stroke-width: 2.5;
+      stroke-linecap: round;
+      stroke-dasharray: 88 88;
+      stroke-dashoffset: 88;
+      transform: rotate(-90deg);
+      transform-origin: 18px 18px;
+    }
+
+    #prefetch-check {
+      display: none;
+      fill: none;
+      stroke: var(--text-secondary);
+      stroke-opacity: 0.45;
+      stroke-width: 2.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    #prefetch-indicator.spinning #prefetch-arc {
+      animation: prefetch-spin 0.9s linear infinite;
+    }
+
+    @keyframes prefetch-spin {
+      from { transform: rotate(-90deg); }
+      to { transform: rotate(270deg); }
+    }
+
     /* ── Debug overlay ── */
     #btn-debug {
       position: fixed;
@@ -575,6 +636,13 @@
   <div id="lyrics-source"></div>
   <div id="page-indicator"></div>
   <div id="tap-flash"></div>
+  <div id="prefetch-indicator" aria-hidden="true">
+    <svg viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg">
+      <circle class="prefetch-track" cx="18" cy="18" r="14"></circle>
+      <circle id="prefetch-arc" cx="18" cy="18" r="14" pathLength="88"></circle>
+      <polyline id="prefetch-check" points="10,19 15,24 26,13"></polyline>
+    </svg>
+  </div>
 
   <button id="btn-dark" aria-label="Toggle dark mode">
     <svg id="icon-sun" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -649,6 +717,9 @@
     const lyricsSource = document.getElementById('lyrics-source');
     const pageIndicator = document.getElementById('page-indicator');
     const tapFlash = document.getElementById('tap-flash');
+    const prefetchIndicator = document.getElementById('prefetch-indicator');
+    const prefetchArc = document.getElementById('prefetch-arc');
+    const prefetchCheck = document.getElementById('prefetch-check');
     const btnDebug = document.getElementById('btn-debug');
     const debugOverlay = document.getElementById('debug-overlay');
     const debugLog = document.getElementById('debug-log');
@@ -677,6 +748,68 @@
     let eventSource = null;
     let sseReconnectTimer = null;
     let appBooted = false;
+    let prefetchActive = false;
+    let prefetchDoneTimer = null;
+
+    const PREFETCH_RING_LENGTH = 88;
+    const PREFETCH_SPIN_DASHARRAY = '22 66';
+
+    function clearPrefetchDoneTimer() {
+      if (!prefetchDoneTimer) return;
+      clearTimeout(prefetchDoneTimer);
+      prefetchDoneTimer = null;
+    }
+
+    function resetPrefetchIndicator() {
+      prefetchIndicator.classList.remove('spinning');
+      prefetchArc.style.display = '';
+      prefetchArc.style.strokeDasharray = `${PREFETCH_RING_LENGTH} ${PREFETCH_RING_LENGTH}`;
+      prefetchArc.style.strokeDashoffset = String(PREFETCH_RING_LENGTH);
+      prefetchCheck.style.display = 'none';
+    }
+
+    function updatePrefetchProgress(pct) {
+      const clampedPct = Math.max(0, Math.min(100, Number(pct) || 0));
+      prefetchIndicator.classList.add('visible');
+      prefetchIndicator.classList.remove('spinning');
+      prefetchArc.style.display = '';
+      prefetchCheck.style.display = 'none';
+      prefetchArc.style.strokeDasharray = `${PREFETCH_RING_LENGTH} ${PREFETCH_RING_LENGTH}`;
+      prefetchArc.style.strokeDashoffset = String(PREFETCH_RING_LENGTH * (1 - clampedPct / 100));
+    }
+
+    function setPrefetchState(state) {
+      clearPrefetchDoneTimer();
+
+      if (state === 'started') {
+        prefetchActive = true;
+        resetPrefetchIndicator();
+        prefetchIndicator.classList.add('visible', 'spinning');
+        prefetchArc.style.strokeDasharray = PREFETCH_SPIN_DASHARRAY;
+        return;
+      }
+
+      if (state === 'done') {
+        prefetchActive = false;
+        prefetchIndicator.classList.remove('spinning');
+        prefetchIndicator.classList.add('visible');
+        prefetchArc.style.strokeDasharray = `${PREFETCH_RING_LENGTH} ${PREFETCH_RING_LENGTH}`;
+        prefetchArc.style.strokeDashoffset = '0';
+        prefetchCheck.style.display = 'inline';
+        prefetchDoneTimer = setTimeout(() => {
+          prefetchIndicator.classList.remove('visible');
+          resetPrefetchIndicator();
+          prefetchDoneTimer = null;
+        }, 3000);
+        return;
+      }
+
+      if (state === 'failed') {
+        prefetchActive = false;
+        prefetchIndicator.classList.remove('visible');
+        resetPrefetchIndicator();
+      }
+    }
 
     function dbg(msg, level = 'ok') {
       debugLineCount++;
@@ -1032,10 +1165,17 @@
           }
           if (payload.type === 'progress') {
             updateProgress(payload.stage, payload.pct);
+            if (prefetchActive) {
+              updatePrefetchProgress(payload.pct);
+            }
             return;
           }
           if (payload.type === 'loading') {
             showLoader(payload.title, payload.artist);
+            return;
+          }
+          if (payload.type === 'prefetch') {
+            setPrefetchState(payload.state);
             return;
           }
           dbg(`SSE ← ${JSON.stringify(payload)}`, 'ok');
