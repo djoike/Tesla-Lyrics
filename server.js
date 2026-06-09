@@ -101,9 +101,6 @@ let currentTrackId = null;
 let currentPayload = null;    // last broadcasted payload (for new SSE clients)
 let pollGeneration = 0;
 
-// ─── Prefetch State ──────────────────────────────────────────────────────────
-let prefetchCache = null;     // { trackId, title, artist, album, albumArt, lyrics, source, usedAiExtraction }
-let prefetchInFlight = null;  // trackId currently being prefetched
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const POLL_INTERVAL_MS = 5000;
@@ -1009,75 +1006,6 @@ async function fetchLyrics(trackName, artistName, albumName, durationSec) {
   return createLyricsResult('Lyrics not found.', null);
 }
 
-// ─── Prefetch Helpers ────────────────────────────────────────────────────────
-async function fetchQueueNextTrack() {
-  try {
-    const res = await spotifyGet('https://api.spotify.com/v1/me/player/queue');
-    const data = res.data;
-    const queue = data && data.queue;
-
-    if (!Array.isArray(queue) || queue.length === 0) {
-      broadcastLog('Prefetch: queue is empty or unavailable', 'info');
-      return null;
-    }
-
-    const queueNowId = data.currently_playing && data.currently_playing.id;
-    if (queueNowId && queueNowId !== currentTrackId) {
-      broadcastLog(`Prefetch: queue context mismatch — stale response or different device, skipping`, 'warn');
-      return null;
-    }
-
-    const next = queue[0];
-
-    if (next.id === currentTrackId) {
-      broadcastLog(`Prefetch: queue returned current track as next — stale response, skipping`, 'warn');
-      return null;
-    }
-
-    const nextArtist = Array.isArray(next.artists) ? next.artists.map((a) => a.name).join(', ') : '?';
-    broadcastLog(`Prefetch: next in queue — "${next.name}" by ${nextArtist}`, 'info');
-    return next;
-  } catch (err) {
-    broadcastLog(`Prefetch: queue fetch failed — ${err.message}`, 'warn');
-    return null;
-  }
-}
-
-async function prefetchNextSong() {
-  const nextTrack = await fetchQueueNextTrack();
-  if (!nextTrack || !nextTrack.id) return;
-
-  const trackId = nextTrack.id;
-  if (prefetchCache && prefetchCache.trackId === trackId) return;
-  if (prefetchInFlight === trackId) return;
-
-  prefetchInFlight = trackId;
-  const title = nextTrack.name;
-  const artist = nextTrack.artists.map((a) => a.name).join(', ');
-  const album = nextTrack.album ? nextTrack.album.name : '';
-  const albumArt = nextTrack.album && nextTrack.album.images && nextTrack.album.images.length
-    ? nextTrack.album.images[0].url
-    : null;
-  const durationSec = Math.round((nextTrack.duration_ms || 0) / 1000);
-
-  broadcastLog(`Prefetch: starting lyrics fetch for "${title}" by ${artist}`, 'info');
-  broadcast({ type: 'prefetch', state: 'started' });
-
-  try {
-    const { lyrics, source, usedAiExtraction } = await fetchLyrics(title, artist, album, durationSec);
-    if (prefetchInFlight === trackId) {
-      prefetchCache = { trackId, title, artist, album, albumArt, lyrics, source, usedAiExtraction: !!usedAiExtraction };
-      broadcastLog(`Prefetch: cached lyrics for "${title}"`, 'ok');
-      broadcast({ type: 'prefetch', state: 'done' });
-    }
-  } catch (err) {
-    broadcastLog(`Prefetch: failed for "${title}" — ${err.message}`, 'warn');
-    broadcast({ type: 'prefetch', state: 'failed' });
-  } finally {
-    if (prefetchInFlight === trackId) prefetchInFlight = null;
-  }
-}
-
 // ─── Core Poll Tick ──────────────────────────────────────────────────────────
 async function pollSpotify() {
   const pollToken = ++pollGeneration;
@@ -1124,25 +1052,6 @@ async function pollSpotify() {
 
     console.log(`Now playing: ${artistName} – ${trackName}`);
 
-    if (prefetchCache && prefetchCache.trackId === trackId) {
-      broadcastLog(`Prefetch: cache hit for "${trackName}" — serving instantly`, 'ok');
-      currentPayload = {
-        status: 'playing',
-        title: trackName,
-        artist: artistName,
-        album: albumName,
-        albumArt,
-        lyrics: prefetchCache.lyrics,
-        source: prefetchCache.source,
-        usedAiExtraction: prefetchCache.usedAiExtraction,
-        isPolling,
-      };
-      prefetchCache = null;
-      broadcast(currentPayload);
-      prefetchNextSong();
-      return;
-    }
-
     broadcast({ type: 'loading', title: trackName, artist: artistName, albumArt });
 
     const { lyrics, source, usedAiExtraction } = await fetchLyrics(trackName, artistName, albumName, durationSec);
@@ -1161,7 +1070,6 @@ async function pollSpotify() {
       isPolling,
     };
     broadcast(currentPayload);
-    prefetchNextSong();
   } catch (err) {
     // Don't crash the poller on transient errors
     console.error('Poll error:', err.message);
