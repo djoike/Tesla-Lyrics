@@ -76,7 +76,7 @@ The app runs on **port 5011** (set via `PORT` env var, default `5011`).
 ### Update procedure
 
 1. Push `master` — GitHub Actions builds and pushes the image to GHCR automatically. Wait for the workflow to go green before proceeding.
-2. In Synology router settings, activate port forward for port **25**.
+2. In Unifi router settings, activate port forward for port **25**.
 3. In Synology DSM, enable SSH access.
 4. Connect: `ssh MortenMonsted@ds.monsted.org -p 25`
 5. Run the update command:
