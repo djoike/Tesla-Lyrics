@@ -18,6 +18,7 @@ const COOKIE_SECRET = process.env.COOKIE_SECRET || 'tesla-lyrics-secret';
 const COOKIE_NAME = 'tl_auth';
 const AUTH_COOKIE_MAX_AGE = 31536000;
 const INDEX_FILE = path.join(__dirname, 'public/index.html');
+const REMOTE_FILE = path.join(__dirname, 'public/remote.html');
 const WEB_LYRICS_CONFIG = {
   braveSearchApiKey: process.env.BRAVE_SEARCH_API_KEY || null,
   githubToken: process.env.GITHUB_TOKEN || null,
@@ -1126,6 +1127,10 @@ app.use((req, res, next) => {
     return res.sendFile(INDEX_FILE);
   }
 
+  if (req.path === '/remote' || req.path === '/remote.html') {
+    return res.sendFile(REMOTE_FILE);
+  }
+
   if (req.path === '/api/status') {
     return res.status(401).json({ pinRequired: true });
   }
@@ -1133,8 +1138,9 @@ app.use((req, res, next) => {
   return res.status(401).json({ error: 'unauthorized', pinRequired: true });
 });
 
-// Serve static frontend
 app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('/remote', (_req, res) => res.sendFile(REMOTE_FILE));
 
 // OAuth – Step 1: redirect to Spotify
 app.get('/login', (_req, res) => {
@@ -1219,6 +1225,16 @@ app.get('/events', (req, res) => {
 });
 
 // Start/Stop polling API
+app.post('/api/page', (req, res) => {
+  const { direction } = req.body || {};
+  if (direction !== 'next' && direction !== 'prev') {
+    return res.status(400).json({ error: 'direction must be "next" or "prev"' });
+  }
+  console.log(`Remote: page ${direction} pulse`);
+  broadcastLog(`Remote: page ${direction}`, 'info');
+  broadcast({ type: 'page', direction });
+  res.json({ ok: true });
+});
 app.post('/api/start', (_req, res) => {
   if (!tokens.access_token && !tokens.refresh_token) {
     return res.status(401).json({ error: 'Not authenticated. Visit /login first.' });

@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Tesla Lyrics Remote</title>
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #F4F1EA;
+      --text-primary: #1a1a1a;
+      --text-secondary: #555550;
+      --text-muted: #8a8880;
+      --accent: #2d2d2a;
+      --btn-bg: rgba(26, 26, 26, 0.08);
+      --btn-hover: rgba(26, 26, 26, 0.16);
+      --btn-active-bg: #1a1a1a;
+      --btn-active-text: #F4F1EA;
+      --divider: rgba(26, 26, 26, 0.1);
+    }
+
+    body.dark {
+      --bg: #121212;
+      --text-primary: #e8e6e0;
+      --text-secondary: #a0a09a;
+      --text-muted: #666660;
+      --accent: #e8e6e0;
+      --btn-bg: rgba(232, 230, 224, 0.08);
+      --btn-hover: rgba(232, 230, 224, 0.16);
+      --btn-active-bg: #e8e6e0;
+      --btn-active-text: #121212;
+      --divider: rgba(232, 230, 224, 0.1);
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text-primary);
+      font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      position: relative;
+    }
+
+    #app {
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      padding: 16px 16px 24px;
+      gap: 12px;
+    }
+
+    #remote-shell {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: opacity 0.2s ease, filter 0.2s ease;
+    }
+
+    body.pin-locked #remote-shell {
+      opacity: 0.42;
+      filter: saturate(0.75);
+    }
+
+    .remote-btn {
+      position: relative;
+      flex: 1;
+      border: 1px solid var(--divider);
+      border-radius: 28px;
+      background: var(--btn-bg);
+      color: var(--text-primary);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      cursor: pointer;
+      overflow: hidden;
+      transition: background 0.15s, transform 0.1s, opacity 0.2s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+      user-select: none;
+    }
+
+    .remote-btn:hover {
+      background: var(--btn-hover);
+    }
+
+    .remote-btn:active,
+    .remote-btn.is-pressed {
+      transform: scale(0.98);
+      background: var(--btn-hover);
+    }
+
+    .remote-btn::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: var(--btn-active-bg);
+      opacity: 0;
+      transition: opacity 0.18s ease;
+      pointer-events: none;
+    }
+
+    .remote-btn.flash::after {
+      opacity: 0.14;
+    }
+
+    .remote-btn:disabled {
+      cursor: default;
+      opacity: 0.78;
+    }
+
+    .remote-btn__arrow,
+    .remote-btn__label {
+      position: relative;
+      z-index: 1;
+    }
+
+    .remote-btn__arrow {
+      font-size: clamp(48px, 12vw, 84px);
+      line-height: 1;
+      letter-spacing: -0.04em;
+    }
+
+    .remote-btn__label {
+      font-size: clamp(28px, 8vw, 56px);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+    }
+
+    .remote-btn[data-direction="prev"] .remote-btn__arrow,
+    .remote-btn[data-direction="prev"] .remote-btn__label {
+      transform: translateX(-2px);
+    }
+
+    .remote-btn[data-direction="next"] .remote-btn__arrow,
+    .remote-btn[data-direction="next"] .remote-btn__label {
+      transform: translateX(2px);
+    }
+
+    #footer-label {
+      flex-shrink: 0;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      padding-bottom: max(6px, env(safe-area-inset-bottom));
+    }
+
+    #pin-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 300;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 32px;
+      padding: 24px;
+    }
+
+    #pin-overlay.hidden {
+      display: none;
+    }
+
+    #pin-display {
+      min-height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 48px;
+      letter-spacing: 16px;
+      color: var(--text-primary);
+      text-align: center;
+      padding-left: 16px;
+    }
+
+    #pin-display.shake {
+      animation: pinShake 0.4s ease;
+    }
+
+    #pin-pad {
+      width: min(380px, 90vw);
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    .pin-btn {
+      width: 100%;
+      aspect-ratio: 1;
+      border: none;
+      border-radius: 16px;
+      background: var(--btn-bg);
+      color: var(--text-primary);
+      cursor: pointer;
+      font-size: 32px;
+      font-weight: 600;
+      transition: background 0.15s, transform 0.1s;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    .pin-btn:hover {
+      background: var(--btn-hover);
+    }
+
+    .pin-btn:active {
+      transform: scale(0.96);
+    }
+
+    #pin-error {
+      min-height: 20px;
+      color: #e05555;
+      font-size: 16px;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    #pin-error.visible {
+      opacity: 1;
+    }
+
+    @keyframes pinShake {
+      0%, 100% { transform: translateX(0); }
+      15% { transform: translateX(-10px); }
+      30% { transform: translateX(10px); }
+      45% { transform: translateX(-8px); }
+      60% { transform: translateX(8px); }
+      75% { transform: translateX(-4px); }
+      90% { transform: translateX(4px); }
+    }
+
+    @media (orientation: landscape) {
+      #remote-shell {
+        flex-direction: row;
+      }
+
+      .remote-btn__arrow {
+        font-size: clamp(40px, 7vw, 72px);
+      }
+
+      .remote-btn__label {
+        font-size: clamp(24px, 4vw, 42px);
+      }
+    }
+  </style>
+</head>
+<body>
+  <main id="app">
+    <section id="remote-shell" aria-label="Tesla Lyrics remote controls">
+      <button class="remote-btn" id="btn-prev" type="button" data-direction="prev" aria-label="Previous lyrics page">
+        <span class="remote-btn__arrow">◀</span>
+        <span class="remote-btn__label">PREV</span>
+      </button>
+      <button class="remote-btn" id="btn-next" type="button" data-direction="next" aria-label="Next lyrics page">
+        <span class="remote-btn__label">NEXT</span>
+        <span class="remote-btn__arrow">▶</span>
+      </button>
+    </section>
+    <div id="footer-label">Tesla Lyrics Remote</div>
+  </main>
+
+  <div id="pin-overlay" class="hidden">
+    <div id="pin-display"><span id="pin-dots"></span></div>
+    <div id="pin-pad">
+      <button class="pin-btn" type="button" data-pin-digit="1">1</button>
+      <button class="pin-btn" type="button" data-pin-digit="2">2</button>
+      <button class="pin-btn" type="button" data-pin-digit="3">3</button>
+      <button class="pin-btn" type="button" data-pin-digit="4">4</button>
+      <button class="pin-btn" type="button" data-pin-digit="5">5</button>
+      <button class="pin-btn" type="button" data-pin-digit="6">6</button>
+      <button class="pin-btn" type="button" data-pin-digit="7">7</button>
+      <button class="pin-btn" type="button" data-pin-digit="8">8</button>
+      <button class="pin-btn" type="button" data-pin-digit="9">9</button>
+      <button class="pin-btn" type="button" id="pin-backspace" aria-label="Backspace">←</button>
+      <button class="pin-btn" type="button" data-pin-digit="0">0</button>
+      <button class="pin-btn" type="button" id="pin-submit" aria-label="Submit PIN">✓</button>
+    </div>
+    <div id="pin-error">Incorrect PIN</div>
+  </div>
+
+  <script>
+    const btnPrev = document.getElementById('btn-prev');
+    const btnNext = document.getElementById('btn-next');
+    const remoteButtons = [btnPrev, btnNext];
+    const pinOverlay = document.getElementById('pin-overlay');
+    const pinDisplay = document.getElementById('pin-display');
+    const pinDots = document.getElementById('pin-dots');
+    const pinError = document.getElementById('pin-error');
+    const pinBackspace = document.getElementById('pin-backspace');
+    const pinSubmit = document.getElementById('pin-submit');
+    const pinDigitButtons = Array.from(document.querySelectorAll('[data-pin-digit]'));
+
+    let pinEntry = '';
+    let pinErrorTimer = null;
+    let pinResetTimer = null;
+    let pinSubmitting = false;
+    let pageRequestPending = false;
+
+    function applyDarkMode(dark) {
+      document.body.classList.toggle('dark', dark);
+    }
+
+    const storedDarkMode = localStorage.getItem('darkMode');
+    if (storedDarkMode === '1') {
+      applyDarkMode(true);
+    } else if (storedDarkMode === '0') {
+      applyDarkMode(false);
+    } else {
+      applyDarkMode(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    }
+
+    function updateRemoteButtons() {
+      const locked = document.body.classList.contains('pin-locked');
+      const disabled = locked || pageRequestPending;
+      remoteButtons.forEach((button) => {
+        button.disabled = disabled;
+      });
+    }
+
+    function updatePinDots() {
+      pinDots.textContent = '●'.repeat(pinEntry.length);
+    }
+
+    function clearPinError() {
+      pinError.classList.remove('visible');
+      pinDisplay.classList.remove('shake');
+      clearTimeout(pinErrorTimer);
+      pinErrorTimer = null;
+    }
+
+    function setPinLocked(locked) {
+      document.body.classList.toggle('pin-locked', locked);
+      pinOverlay.classList.toggle('hidden', !locked);
+      updateRemoteButtons();
+    }
+
+    function clearPinEntry() {
+      pinEntry = '';
+      updatePinDots();
+    }
+
+    function showPinErrorState() {
+      pinError.classList.add('visible');
+      pinDisplay.classList.remove('shake');
+      void pinDisplay.offsetWidth;
+      pinDisplay.classList.add('shake');
+      clearTimeout(pinErrorTimer);
+      pinErrorTimer = setTimeout(() => clearPinError(), 600);
+    }
+
+    async function submitPin() {
+      if (!pinEntry || pinSubmitting) return;
+
+      pinSubmitting = true;
+      clearPinError();
+      clearTimeout(pinResetTimer);
+
+      try {
+        const res = await fetch('/pin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: pinEntry }),
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (res.ok && data.ok) {
+          clearPinEntry();
+          setPinLocked(false);
+          return;
+        }
+
+        showPinErrorState();
+        pinResetTimer = setTimeout(() => {
+          clearPinEntry();
+          clearPinError();
+        }, 600);
+      } catch (_err) {
+        showPinErrorState();
+      } finally {
+        pinSubmitting = false;
+      }
+    }
+
+    function appendPinDigit(digit) {
+      if (pinSubmitting || pinEntry.length >= 6) return;
+      pinEntry += digit;
+      updatePinDots();
+      clearPinError();
+      if (pinEntry.length === 6) {
+        submitPin();
+      }
+    }
+
+    pinDigitButtons.forEach((button) => {
+      button.addEventListener('click', () => appendPinDigit(button.dataset.pinDigit));
+    });
+
+    pinBackspace.addEventListener('click', () => {
+      if (pinSubmitting || !pinEntry.length) return;
+      pinEntry = pinEntry.slice(0, -1);
+      updatePinDots();
+      clearPinError();
+    });
+
+    pinSubmit.addEventListener('click', () => submitPin());
+
+    function flashButton(button) {
+      button.classList.add('flash', 'is-pressed');
+      window.setTimeout(() => button.classList.remove('is-pressed'), 110);
+      window.setTimeout(() => button.classList.remove('flash'), 180);
+    }
+
+    async function sendDirection(direction, button) {
+      if (pageRequestPending || document.body.classList.contains('pin-locked')) return;
+
+      pageRequestPending = true;
+      updateRemoteButtons();
+      flashButton(button);
+
+      try {
+        const res = await fetch('/api/page', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ direction }),
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (res.status === 401 && data.pinRequired) {
+          setPinLocked(true);
+        }
+      } catch (_err) {
+        // Intentionally silent: the remote stays minimal and does not surface transport errors.
+      } finally {
+        pageRequestPending = false;
+        updateRemoteButtons();
+      }
+    }
+
+    remoteButtons.forEach((button) => {
+      const pressStart = () => {
+        if (!button.disabled) {
+          button.classList.add('is-pressed');
+        }
+      };
+      const pressEnd = () => button.classList.remove('is-pressed');
+
+      button.addEventListener('pointerdown', pressStart);
+      button.addEventListener('pointerup', pressEnd);
+      button.addEventListener('pointercancel', pressEnd);
+      button.addEventListener('pointerleave', pressEnd);
+      button.addEventListener('click', () => sendDirection(button.dataset.direction, button));
+    });
+
+    async function checkAuth() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json().catch(() => ({}));
+
+        if (res.status === 401 && data.pinRequired) {
+          setPinLocked(true);
+          return;
+        }
+
+        setPinLocked(false);
+      } catch (_err) {
+        setPinLocked(false);
+      }
+    }
+
+    updatePinDots();
+    updateRemoteButtons();
+    checkAuth();
+  </script>
+</body>
+</html>
