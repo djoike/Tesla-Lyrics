@@ -1013,12 +1013,27 @@ async function fetchLyrics(trackName, artistName, albumName, durationSec) {
 async function fetchQueueNextTrack() {
   try {
     const res = await spotifyGet('https://api.spotify.com/v1/me/player/queue');
-    const queue = res.data && res.data.queue;
+    const data = res.data;
+    const queue = data && data.queue;
+
     if (!Array.isArray(queue) || queue.length === 0) {
       broadcastLog('Prefetch: queue is empty or unavailable', 'info');
       return null;
     }
+
+    const queueNowId = data.currently_playing && data.currently_playing.id;
+    if (queueNowId && queueNowId !== currentTrackId) {
+      broadcastLog(`Prefetch: queue context mismatch — stale response or different device, skipping`, 'warn');
+      return null;
+    }
+
     const next = queue[0];
+
+    if (next.id === currentTrackId) {
+      broadcastLog(`Prefetch: queue returned current track as next — stale response, skipping`, 'warn');
+      return null;
+    }
+
     const nextArtist = Array.isArray(next.artists) ? next.artists.map((a) => a.name).join(', ') : '?';
     broadcastLog(`Prefetch: next in queue — "${next.name}" by ${nextArtist}`, 'info');
     return next;
