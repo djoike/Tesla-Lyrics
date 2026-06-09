@@ -101,6 +101,7 @@ let currentTrackId = null;
 let currentPayload = null;    // last broadcasted payload (for new SSE clients)
 let pollGeneration = 0;
 
+// ─── Prefetch State ──────────────────────────────────────────────────────────
 let prefetchCache = null;     // { trackId, title, artist, album, albumArt, lyrics, source, usedAiExtraction }
 let prefetchInFlight = null;  // trackId currently being prefetched
 
@@ -1008,6 +1009,7 @@ async function fetchLyrics(trackName, artistName, albumName, durationSec) {
   return createLyricsResult('Lyrics not found.', null);
 }
 
+// ─── Prefetch Helpers ────────────────────────────────────────────────────────
 async function fetchQueueNextTrack() {
   try {
     const res = await spotifyGet('https://api.spotify.com/v1/me/player/queue');
@@ -1196,6 +1198,10 @@ app.use((req, res, next) => {
     return next();
   }
 
+  if (req.path === '/login' || req.path === '/callback') {
+    return next();
+  }
+
   if (req.path === '/') {
     return res.sendFile(INDEX_FILE);
   }
@@ -1217,12 +1223,16 @@ app.get('/remote', (_req, res) => res.sendFile(REMOTE_FILE));
 
 // OAuth – Step 1: redirect to Spotify
 app.get('/login', (_req, res) => {
-  const scope = 'user-read-currently-playing';
+  tokens = { access_token: null, refresh_token: null };
+  saveTokens(tokens);
+
+  const scope = 'user-read-currently-playing user-read-playback-state';
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: process.env.SPOTIFY_CLIENT_ID,
     scope,
     redirect_uri: process.env.REDIRECT_URI,
+    show_dialog: 'true',
   });
   res.redirect(`https://accounts.spotify.com/authorize?${params.toString()}`);
 });
@@ -1308,6 +1318,7 @@ app.post('/api/page', (req, res) => {
   broadcast({ type: 'page', direction });
   res.json({ ok: true });
 });
+
 app.post('/api/start', (_req, res) => {
   if (!tokens.access_token && !tokens.refresh_token) {
     return res.status(401).json({ error: 'Not authenticated. Visit /login first.' });
