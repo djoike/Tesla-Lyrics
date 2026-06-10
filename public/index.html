@@ -61,6 +61,8 @@
     body.pin-locked #timeout-toast,
     body.pin-locked #lyrics-source,
     body.pin-locked #page-indicator,
+    body.pin-locked #vote-tally,
+    body.pin-locked #vote-toast-stack,
     body.pin-locked #tap-flash,
     body.pin-locked #btn-debug,
     body.pin-locked #debug-overlay,
@@ -552,6 +554,55 @@
     .dbg-line.warn { color: #ffd080; }
     .dbg-line.info { color: #80d0ff; }
     .dbg-line.ok   { color: #c8ffc8; }
+
+    #vote-tally {
+      position: fixed;
+      bottom: 30px;
+      left: 28px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+      white-space: nowrap;
+      display: none;
+      z-index: 20;
+      pointer-events: none;
+    }
+
+    #vote-tally.visible {
+      display: block;
+    }
+
+    #vote-toast-stack {
+      position: fixed;
+      bottom: 58px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      z-index: 30;
+      pointer-events: none;
+    }
+
+    .vote-toast-item {
+      background: var(--btn-active-bg);
+      color: var(--btn-active-text);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 7px 18px;
+      border-radius: 20px;
+      white-space: nowrap;
+      opacity: 0;
+      transform: translateY(6px);
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+
+    .vote-toast-item.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
   </style>
 </head>
 <body>
@@ -574,6 +625,8 @@
   <div id="timeout-toast">⏱ Polling stopped after 1 hour.</div>
   <div id="lyrics-source"></div>
   <div id="page-indicator"></div>
+  <div id="vote-tally"></div>
+  <div id="vote-toast-stack"></div>
   <div id="tap-flash"></div>
 
   <button id="btn-dark" aria-label="Toggle dark mode">
@@ -652,6 +705,8 @@
     const btnDebug = document.getElementById('btn-debug');
     const debugOverlay = document.getElementById('debug-overlay');
     const debugLog = document.getElementById('debug-log');
+    const voteTally = document.getElementById('vote-tally');
+    const voteToastStack = document.getElementById('vote-toast-stack');
     const btnDebugClose = document.getElementById('btn-debug-close');
     const btnDebugClear = document.getElementById('btn-debug-clear');
     const loaderOverlay = document.getElementById('loader-overlay');
@@ -677,6 +732,30 @@
     let eventSource = null;
     let sseReconnectTimer = null;
     let appBooted = false;
+
+    function showVoteToast(msg) {
+      if (!msg) return;
+      const item = document.createElement('div');
+      item.className = 'vote-toast-item';
+      item.textContent = msg;
+      voteToastStack.appendChild(item);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => item.classList.add('visible'));
+      });
+      setTimeout(() => {
+        item.classList.remove('visible');
+        item.addEventListener('transitionend', () => item.remove(), { once: true });
+      }, 3000);
+    }
+
+    function updateVoteTally(skipCount, keepCount, voterCount) {
+      if (voterCount === 0) {
+        voteTally.classList.remove('visible');
+        return;
+      }
+      voteTally.textContent = `♥ ${keepCount} keep · ✕ ${skipCount} skip`;
+      voteTally.classList.add('visible');
+    }
 
     function dbg(msg, level = 'ok') {
       debugLineCount++;
@@ -1024,6 +1103,11 @@
           if (payload.type === 'page') {
             const delta = payload.direction === 'next' ? 1 : -1;
             renderPage(currentPage + delta);
+            return;
+          }
+          if (payload.type === 'vote') {
+            updateVoteTally(payload.skipCount, payload.keepCount, payload.voters.length);
+            showVoteToast(payload.toast);
             return;
           }
           if (payload.type === 'log') {
