@@ -101,6 +101,12 @@ let currentTrackId = null;
 let currentPayload = null;    // last broadcasted payload (for new SSE clients)
 let pollGeneration = 0;
 
+// ─── Voter State ─────────────────────────────────────────────────────────────
+const voters = new Map(); // id → { name, vote, lastSeen }
+let skipCountdownTimer = null;
+const SKIP_COUNTDOWN_MS = 5000;
+const VOTER_INACTIVE_MS = 30 * 60 * 1000;   // 30 min
+const VOTER_CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 min
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const POLL_INTERVAL_MS = 5000;
@@ -169,6 +175,89 @@ async function spotifyGet(url) {
     throw err;
   }
 }
+
+async function spotifyPost(url, body = null) {
+  if (!tokens.access_token) throw new Error('Not authenticated.');
+
+  const makeConfig = () => ({
+    headers: {
+      Authorization: `Bearer ${tokens.access_token}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  try {
+    const res = await axios.post(url, body, makeConfig());
+    return res;
+  } catch (err) {
+    if (err.response && err.response.status === 401) {
+      await refreshAccessToken();
+      return axios.post(url, body, makeConfig());
+    }
+    throw err;
+  }
+}
+
+// ─── Voter Helpers ────────────────────────────────────────────────────────────
+function getActiveVoters() {
+  const cutoff = Date.now() - VOTER_INACTIVE_MS;
+  return [...voters.values()].filter((v) => v.lastSeen >= cutoff);
+}
+
+function buildVotePayload(toast = null) {
+  const active = getActiveVoters();
+  const skipCount = active.filter((v) => v.vote === 'skip').length;
+  const keepCount = active.filter((v) => v.vote === 'keep').length;
+  return {
+    type: 'vote',
+    voters: active.map((v) => ({ name: v.name, vote: v.vote })),
+    skipCount,
+    keepCount,
+    toast,
+  };
+}
+
+function broadcastVoteState(toast = null) {
+  broadcast(buildVotePayload(toast));
+}
+
+function resetVotes() {
+  clearTimeout(skipCountdownTimer);
+  skipCountdownTimer = null;
+  for (const v of voters.values()) {
+    v.vote = null;
+  }
+}
+
+async function evaluateAndSkip() {
+  const active = getActiveVoters();
+  const skipCount = active.filter((v) => v.vote === 'skip').length;
+  const keepCount = active.filter((v) => v.vote === 'keep').length;
+  resetVotes();
+  broadcastVoteState(null);
+  if (skipCount > keepCount) {
+    console.log(`Vote: skip wins ${skipCount}–${keepCount}. Skipping track.`);
+    try {
+      await spotifyPost('https://api.spotify.com/v1/me/player/next');
+    } catch (err) {
+      console.error('Vote: skip API error:', err.message);
+    }
+  } else {
+    console.log(`Vote: keep wins or tie ${keepCount}–${skipCount}. Song continues.`);
+  }
+}
+
+function startSkipCountdown() {
+  clearTimeout(skipCountdownTimer);
+  skipCountdownTimer = setTimeout(evaluateAndSkip, SKIP_COUNTDOWN_MS);
+}
+
+setInterval(() => {
+  const cutoff = Date.now() - VOTER_INACTIVE_MS;
+  for (const [id, v] of voters.entries()) {
+    if (v.lastSeen < cutoff) voters.delete(id);
+  }
+}, VOTER_CLEANUP_INTERVAL_MS);
 
 // ─── Lyrics Fetching (LRCLIB → Genius fallback) ─────────────────────────────
 function createLyricsResult(lyrics, source, usedAiExtraction = false) {
@@ -1042,6 +1131,8 @@ async function pollSpotify() {
     if (trackId === currentTrackId) return; // Same song, no update needed
 
     currentTrackId = trackId;
+    resetVotes();
+    broadcastVoteState(null);
     const trackName = track.name;
     const artistName = track.artists.map((a) => a.name).join(', ');
     const albumName = track.album ? track.album.name : '';
@@ -1152,7 +1243,7 @@ app.get('/login', (_req, res) => {
   tokens = { access_token: null, refresh_token: null };
   saveTokens(tokens);
 
-  const scope = 'user-read-currently-playing user-read-playback-state';
+  const scope = 'user-read-currently-playing user-read-playback-state user-modify-playback-state';
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: process.env.SPOTIFY_CLIENT_ID,
@@ -1216,6 +1307,7 @@ app.get('/events', (req, res) => {
     ? { ...currentPayload, source: currentPayload.source ?? null, usedAiExtraction: !!currentPayload.usedAiExtraction, isPolling }
     : { status: 'idle', title: null, artist: null, album: null, albumArt: null, lyrics: 'Start polling to load lyrics.', source: null, usedAiExtraction: false, isPolling };
   res.write(`data: ${JSON.stringify(initialPayload)}\n\n`);
+  res.write(`data: ${JSON.stringify(buildVotePayload())}\n\n`);
 
   // Heartbeat every 30 s to keep connection alive through Tesla's browser
   const heartbeat = setInterval(() => {
@@ -1269,6 +1361,53 @@ app.get('/api/status', (_req, res) => {
       ? { title: currentPayload.title, artist: currentPayload.artist }
       : null,
   });
+});
+
+// ─── Voter Routes ─────────────────────────────────────────────────────────────
+app.get('/api/voter/me', (req, res) => {
+  const { id } = req.query;
+  if (!id) return res.status(400).json({ error: 'id required' });
+  const voter = voters.get(id);
+  if (!voter) return res.json({ registered: false });
+  voter.lastSeen = Date.now();
+  return res.json({ registered: true, name: voter.name });
+});
+
+app.post('/api/voter/register', (req, res) => {
+  const { id, name } = req.body || {};
+  if (!id || typeof id !== 'string') return res.status(400).json({ error: 'id required' });
+  if (!name || typeof name !== 'string' || !name.trim()) return res.status(400).json({ error: 'name required' });
+  const trimmedName = name.trim().slice(0, 32);
+  voters.set(id, { name: trimmedName, vote: null, lastSeen: Date.now() });
+  console.log(`Voter registered: "${trimmedName}" (${id.slice(0, 8)}…)`);
+  broadcastVoteState(`${trimmedName} joined`);
+  return res.json({ ok: true, name: trimmedName });
+});
+
+app.post('/api/vote', (req, res) => {
+  const { id, vote } = req.body || {};
+  if (!id) return res.status(400).json({ error: 'id required' });
+  if (vote !== 'skip' && vote !== 'keep' && vote !== null) {
+    return res.status(400).json({ error: 'vote must be "skip", "keep", or null' });
+  }
+  const voter = voters.get(id);
+  if (!voter) return res.status(404).json({ error: 'voter not registered' });
+  voter.vote = vote;
+  voter.lastSeen = Date.now();
+  const label = vote === 'skip' ? 'skip' : vote === 'keep' ? 'keep' : 'abstain';
+  console.log(`Vote: ${voter.name} → ${label}`);
+  broadcastVoteState(`${voter.name} voted ${label}`);
+  startSkipCountdown();
+  return res.json({ ok: true });
+});
+
+app.post('/api/voter/heartbeat', (req, res) => {
+  const { id } = req.body || {};
+  if (!id) return res.status(400).json({ error: 'id required' });
+  const voter = voters.get(id);
+  if (!voter) return res.status(404).json({ error: 'voter not registered' });
+  voter.lastSeen = Date.now();
+  return res.json({ ok: true });
 });
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
