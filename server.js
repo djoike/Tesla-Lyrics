@@ -233,10 +233,10 @@ async function evaluateAndSkip() {
   const active = getActiveVoters();
   const skipCount = active.filter((v) => v.vote === 'skip').length;
   const keepCount = active.filter((v) => v.vote === 'keep').length;
-  resetVotes();
-  broadcastVoteState(null);
   if (skipCount > keepCount) {
     console.log(`Vote: skip wins ${skipCount}–${keepCount}. Skipping track.`);
+    resetVotes();
+    broadcastVoteState(null);
     try {
       await spotifyPost('https://api.spotify.com/v1/me/player/next');
     } catch (err) {
