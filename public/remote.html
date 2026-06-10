@@ -22,6 +22,12 @@
       --btn-active-bg: #1a1a1a;
       --btn-active-text: #F4F1EA;
       --divider: rgba(26, 26, 26, 0.1);
+      --skip-color: #c82020;
+      --skip-bg: rgba(200, 32, 32, 0.12);
+      --skip-border: rgba(200, 32, 32, 0.4);
+      --keep-color: #1a8a3a;
+      --keep-bg: rgba(26, 138, 58, 0.12);
+      --keep-border: rgba(26, 138, 58, 0.4);
     }
 
     body.dark {
@@ -35,6 +41,12 @@
       --btn-active-bg: #e8e6e0;
       --btn-active-text: #121212;
       --divider: rgba(232, 230, 224, 0.1);
+      --skip-color: #ff6060;
+      --skip-bg: rgba(255, 80, 80, 0.12);
+      --skip-border: rgba(255, 80, 80, 0.4);
+      --keep-color: #50c870;
+      --keep-bg: rgba(60, 200, 100, 0.12);
+      --keep-border: rgba(60, 200, 100, 0.4);
     }
 
     html, body {
@@ -47,119 +59,243 @@
       -webkit-font-smoothing: antialiased;
     }
 
-    body {
-      position: relative;
-    }
-
     #app {
       min-height: 100vh;
       min-height: 100dvh;
       display: flex;
       flex-direction: column;
       padding: 16px 16px 24px;
-      gap: 12px;
+      gap: 10px;
+      transition: opacity 0.2s ease, filter 0.2s ease;
     }
 
-    #remote-shell {
+    body.pin-locked #app {
+      opacity: 0.42;
+      filter: saturate(0.75);
+      pointer-events: none;
+    }
+
+    #track-info {
+      flex-shrink: 0;
+      text-align: center;
+      padding: 4px 0;
+    }
+
+    #track-title {
+      font-size: clamp(14px, 4vw, 18px);
+      font-weight: 700;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    #track-artist {
+      font-size: clamp(12px, 3vw, 14px);
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 2px;
+    }
+
+    #vote-section {
       flex: 1;
       min-height: 0;
       display: flex;
       flex-direction: column;
-      gap: 12px;
-      transition: opacity 0.2s ease, filter 0.2s ease;
+      gap: 10px;
     }
 
-    body.pin-locked #remote-shell {
-      opacity: 0.42;
-      filter: saturate(0.75);
-    }
-
-    .remote-btn {
-      position: relative;
+    .vote-btn {
       flex: 1;
-      border: 1px solid var(--divider);
-      border-radius: 28px;
+      border: 2px solid var(--divider);
+      border-radius: 24px;
       background: var(--btn-bg);
       color: var(--text-primary);
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 10px;
+      gap: 8px;
       cursor: pointer;
       overflow: hidden;
-      transition: background 0.15s, transform 0.1s, opacity 0.2s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
+      transition: background 0.15s, transform 0.1s, border-color 0.15s, color 0.15s;
       -webkit-tap-highlight-color: transparent;
       touch-action: manipulation;
       user-select: none;
     }
 
-    .remote-btn:hover {
-      background: var(--btn-hover);
+    .vote-btn:active {
+      transform: scale(0.97);
     }
 
-    .remote-btn:active,
-    .remote-btn.is-pressed {
-      transform: scale(0.98);
-      background: var(--btn-hover);
-    }
-
-    .remote-btn::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: var(--btn-active-bg);
-      opacity: 0;
-      transition: opacity 0.18s ease;
-      pointer-events: none;
-    }
-
-    .remote-btn.flash::after {
-      opacity: 0.14;
-    }
-
-    .remote-btn:disabled {
-      cursor: default;
-      opacity: 0.78;
-    }
-
-    .remote-btn__arrow,
-    .remote-btn__label {
-      position: relative;
-      z-index: 1;
-    }
-
-    .remote-btn__arrow {
-      font-size: clamp(48px, 12vw, 84px);
+    .vote-btn__icon {
+      font-size: clamp(44px, 11vw, 72px);
       line-height: 1;
-      letter-spacing: -0.04em;
     }
 
-    .remote-btn__label {
-      font-size: clamp(28px, 8vw, 56px);
+    .vote-btn__label {
+      font-size: clamp(20px, 6vw, 32px);
       font-weight: 700;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.1em;
     }
 
-    .remote-btn[data-direction="prev"] .remote-btn__arrow,
-    .remote-btn[data-direction="prev"] .remote-btn__label {
-      transform: translateX(-2px);
+    .vote-btn.skip-active {
+      background: var(--skip-bg);
+      border-color: var(--skip-border);
+      color: var(--skip-color);
     }
 
-    .remote-btn[data-direction="next"] .remote-btn__arrow,
-    .remote-btn[data-direction="next"] .remote-btn__label {
-      transform: translateX(2px);
+    .vote-btn.keep-active {
+      background: var(--keep-bg);
+      border-color: var(--keep-border);
+      color: var(--keep-color);
+    }
+
+    #voter-list {
+      flex-shrink: 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: center;
+      padding: 2px 0;
+      min-height: 30px;
+    }
+
+    .voter-chip {
+      font-size: 13px;
+      font-weight: 600;
+      padding: 4px 12px;
+      border-radius: 20px;
+      background: var(--btn-bg);
+      color: var(--text-secondary);
+      white-space: nowrap;
+      border: 1px solid transparent;
+    }
+
+    .voter-chip.is-me {
+      border-color: var(--divider);
+      color: var(--text-primary);
+    }
+
+    .voter-chip.vote-skip {
+      color: var(--skip-color);
+    }
+
+    .voter-chip.vote-keep {
+      color: var(--keep-color);
+    }
+
+    #nav-row {
+      flex-shrink: 0;
+      display: flex;
+      gap: 10px;
+      height: 60px;
+    }
+
+    .nav-btn {
+      flex: 1;
+      border: 1px solid var(--divider);
+      border-radius: 16px;
+      background: var(--btn-bg);
+      color: var(--text-secondary);
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+      user-select: none;
+    }
+
+    .nav-btn:active {
+      transform: scale(0.96);
+      background: var(--btn-hover);
+    }
+
+    .nav-btn:disabled {
+      opacity: 0.5;
+      cursor: default;
     }
 
     #footer-label {
       flex-shrink: 0;
       text-align: center;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 600;
       letter-spacing: 0.12em;
       text-transform: uppercase;
       color: var(--text-muted);
-      padding-bottom: max(6px, env(safe-area-inset-bottom));
+      padding-bottom: max(4px, env(safe-area-inset-bottom));
+    }
+
+    #name-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 32px;
+    }
+
+    #name-overlay.hidden {
+      display: none;
+    }
+
+    #name-overlay h2 {
+      font-size: clamp(24px, 7vw, 32px);
+      font-weight: 700;
+      color: var(--text-primary);
+      text-align: center;
+    }
+
+    #name-overlay p {
+      font-size: 15px;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    #name-input {
+      width: min(320px, 88vw);
+      font-size: 22px;
+      text-align: center;
+      padding: 14px 16px;
+      border: 2px solid var(--divider);
+      border-radius: 16px;
+      background: var(--bg);
+      color: var(--text-primary);
+      outline: none;
+      font-family: inherit;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #name-input:focus {
+      border-color: var(--accent);
+    }
+
+    #name-submit {
+      width: min(320px, 88vw);
+      font-size: 18px;
+      font-weight: 700;
+      padding: 16px;
+      border: none;
+      border-radius: 16px;
+      background: var(--btn-active-bg);
+      color: var(--btn-active-text);
+      cursor: pointer;
+      font-family: inherit;
+      letter-spacing: 0.04em;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #name-submit:active {
+      opacity: 0.8;
     }
 
     #pin-overlay {
@@ -209,28 +345,26 @@
       border-radius: 16px;
       background: var(--btn-bg);
       color: var(--text-primary);
-      cursor: pointer;
-      font-size: 32px;
+      font-size: clamp(22px, 6vw, 32px);
       font-weight: 600;
-      transition: background 0.15s, transform 0.1s;
+      cursor: pointer;
+      font-family: inherit;
       -webkit-tap-highlight-color: transparent;
       touch-action: manipulation;
-    }
-
-    .pin-btn:hover {
-      background: var(--btn-hover);
+      transition: background 0.1s, transform 0.08s;
     }
 
     .pin-btn:active {
-      transform: scale(0.96);
+      background: var(--btn-hover);
+      transform: scale(0.93);
     }
 
     #pin-error {
-      min-height: 20px;
-      color: #e05555;
-      font-size: 16px;
+      font-size: 15px;
+      color: #e04040;
+      font-weight: 600;
       opacity: 0;
-      transition: opacity 0.2s;
+      transition: opacity 0.15s;
     }
 
     #pin-error.visible {
@@ -248,34 +382,46 @@
     }
 
     @media (orientation: landscape) {
-      #remote-shell {
+      #vote-section {
         flex-direction: row;
-      }
-
-      .remote-btn__arrow {
-        font-size: clamp(40px, 7vw, 72px);
-      }
-
-      .remote-btn__label {
-        font-size: clamp(24px, 4vw, 42px);
       }
     }
   </style>
 </head>
 <body>
   <main id="app">
-    <section id="remote-shell" aria-label="Tesla Lyrics remote controls">
-      <button class="remote-btn" id="btn-prev" type="button" data-direction="prev" aria-label="Previous lyrics page">
-        <span class="remote-btn__arrow">◀</span>
-        <span class="remote-btn__label">PREV</span>
+    <div id="track-info">
+      <div id="track-title">—</div>
+      <div id="track-artist"></div>
+    </div>
+
+    <div id="vote-section">
+      <button class="vote-btn" id="btn-skip" type="button">
+        <span class="vote-btn__icon">✕</span>
+        <span class="vote-btn__label">SKIP</span>
       </button>
-      <button class="remote-btn" id="btn-next" type="button" data-direction="next" aria-label="Next lyrics page">
-        <span class="remote-btn__label">NEXT</span>
-        <span class="remote-btn__arrow">▶</span>
+      <button class="vote-btn" id="btn-keep" type="button">
+        <span class="vote-btn__icon">♥</span>
+        <span class="vote-btn__label">KEEP</span>
       </button>
-    </section>
+    </div>
+
+    <div id="voter-list"></div>
+
+    <div id="nav-row">
+      <button class="nav-btn" id="btn-prev" type="button" data-direction="prev">◀ PREV</button>
+      <button class="nav-btn" id="btn-next" type="button" data-direction="next">NEXT ▶</button>
+    </div>
+
     <div id="footer-label">Tesla Lyrics Remote</div>
   </main>
+
+  <div id="name-overlay" class="hidden">
+    <h2>Who are you?</h2>
+    <p>Enter your name to join the vote</p>
+    <input id="name-input" type="text" placeholder="Name or emoji 🎵" maxlength="32" autocomplete="off" />
+    <button id="name-submit" type="button">Join →</button>
+  </div>
 
   <div id="pin-overlay" class="hidden">
     <div id="pin-display"><span id="pin-dots"></span></div>
@@ -297,23 +443,6 @@
   </div>
 
   <script>
-    const btnPrev = document.getElementById('btn-prev');
-    const btnNext = document.getElementById('btn-next');
-    const remoteButtons = [btnPrev, btnNext];
-    const pinOverlay = document.getElementById('pin-overlay');
-    const pinDisplay = document.getElementById('pin-display');
-    const pinDots = document.getElementById('pin-dots');
-    const pinError = document.getElementById('pin-error');
-    const pinBackspace = document.getElementById('pin-backspace');
-    const pinSubmit = document.getElementById('pin-submit');
-    const pinDigitButtons = Array.from(document.querySelectorAll('[data-pin-digit]'));
-
-    let pinEntry = '';
-    let pinErrorTimer = null;
-    let pinResetTimer = null;
-    let pinSubmitting = false;
-    let pageRequestPending = false;
-
     function applyDarkMode(dark) {
       document.body.classList.toggle('dark', dark);
     }
@@ -327,11 +456,43 @@
       applyDarkMode(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
     }
 
-    function updateRemoteButtons() {
-      const locked = document.body.classList.contains('pin-locked');
-      const disabled = locked || pageRequestPending;
-      remoteButtons.forEach((button) => {
-        button.disabled = disabled;
+    const btnPrev = document.getElementById('btn-prev');
+    const btnNext = document.getElementById('btn-next');
+    const btnSkip = document.getElementById('btn-skip');
+    const btnKeep = document.getElementById('btn-keep');
+    const trackTitle = document.getElementById('track-title');
+    const trackArtist = document.getElementById('track-artist');
+    const voterListEl = document.getElementById('voter-list');
+    const nameOverlay = document.getElementById('name-overlay');
+    const nameInput = document.getElementById('name-input');
+    const nameSubmit = document.getElementById('name-submit');
+    const pinOverlay = document.getElementById('pin-overlay');
+    const pinDisplay = document.getElementById('pin-display');
+    const pinDots = document.getElementById('pin-dots');
+    const pinError = document.getElementById('pin-error');
+    const pinBackspace = document.getElementById('pin-backspace');
+    const pinSubmit = document.getElementById('pin-submit');
+    const pinDigitButtons = Array.from(document.querySelectorAll('[data-pin-digit]'));
+
+    let myVoterId = localStorage.getItem('voterSessionId');
+    let myVoterName = localStorage.getItem('voterName');
+    let myVote = null;
+    let sseConn = null;
+    let heartbeatTimer = null;
+    let voteRequestPending = false;
+    let pageRequestPending = false;
+    let pinEntry = '';
+    let pinErrorTimer = null;
+    let pinResetTimer = null;
+    let pinSubmitting = false;
+
+    function generateId() {
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return crypto.randomUUID();
+      }
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = Math.random() * 16 | 0;
+        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
       });
     }
 
@@ -349,7 +510,10 @@
     function setPinLocked(locked) {
       document.body.classList.toggle('pin-locked', locked);
       pinOverlay.classList.toggle('hidden', !locked);
-      updateRemoteButtons();
+      if (locked) {
+        nameOverlay.classList.add('hidden');
+      }
+      updateNavButtons();
     }
 
     function clearPinEntry() {
@@ -368,11 +532,9 @@
 
     async function submitPin() {
       if (!pinEntry || pinSubmitting) return;
-
       pinSubmitting = true;
       clearPinError();
       clearTimeout(pinResetTimer);
-
       try {
         const res = await fetch('/pin', {
           method: 'POST',
@@ -380,13 +542,13 @@
           body: JSON.stringify({ pin: pinEntry }),
         });
         const data = await res.json().catch(() => ({}));
-
         if (res.ok && data.ok) {
           clearPinEntry();
           setPinLocked(false);
+          await initVoter();
+          startHeartbeat();
           return;
         }
-
         showPinErrorState();
         pinResetTimer = setTimeout(() => {
           clearPinEntry();
@@ -422,19 +584,19 @@
 
     pinSubmit.addEventListener('click', () => submitPin());
 
-    function flashButton(button) {
-      button.classList.add('flash', 'is-pressed');
-      window.setTimeout(() => button.classList.remove('is-pressed'), 110);
-      window.setTimeout(() => button.classList.remove('flash'), 180);
+    function updateNavButtons() {
+      const locked = document.body.classList.contains('pin-locked');
+      const disabled = locked || pageRequestPending;
+      btnPrev.disabled = disabled;
+      btnNext.disabled = disabled;
     }
 
     async function sendDirection(direction, button) {
       if (pageRequestPending || document.body.classList.contains('pin-locked')) return;
-
       pageRequestPending = true;
-      updateRemoteButtons();
-      flashButton(button);
-
+      updateNavButtons();
+      button.style.opacity = '0.6';
+      setTimeout(() => { button.style.opacity = ''; }, 180);
       try {
         const res = await fetch('/api/page', {
           method: 'POST',
@@ -442,52 +604,217 @@
           body: JSON.stringify({ direction }),
         });
         const data = await res.json().catch(() => ({}));
-
         if (res.status === 401 && data.pinRequired) {
           setPinLocked(true);
         }
-      } catch (_err) {
-        // Intentionally silent: the remote stays minimal and does not surface transport errors.
-      } finally {
+      } catch (_) {}
+      finally {
         pageRequestPending = false;
-        updateRemoteButtons();
+        updateNavButtons();
       }
     }
 
-    remoteButtons.forEach((button) => {
-      const pressStart = () => {
-        if (!button.disabled) {
-          button.classList.add('is-pressed');
-        }
-      };
-      const pressEnd = () => button.classList.remove('is-pressed');
+    btnPrev.addEventListener('click', () => sendDirection('prev', btnPrev));
+    btnNext.addEventListener('click', () => sendDirection('next', btnNext));
 
-      button.addEventListener('pointerdown', pressStart);
-      button.addEventListener('pointerup', pressEnd);
-      button.addEventListener('pointercancel', pressEnd);
-      button.addEventListener('pointerleave', pressEnd);
-      button.addEventListener('click', () => sendDirection(button.dataset.direction, button));
+    function updateVoteButtons(pendingVote) {
+      const v = pendingVote !== undefined ? pendingVote : myVote;
+      btnSkip.classList.toggle('skip-active', v === 'skip');
+      btnKeep.classList.toggle('keep-active', v === 'keep');
+    }
+
+    function renderVoterList(voterArray) {
+      voterListEl.innerHTML = '';
+      for (const voter of voterArray) {
+        const chip = document.createElement('div');
+        chip.className = 'voter-chip';
+        if (voter.name === myVoterName) chip.classList.add('is-me');
+        if (voter.vote === 'skip') chip.classList.add('vote-skip');
+        if (voter.vote === 'keep') chip.classList.add('vote-keep');
+        const icon = voter.vote === 'skip' ? ' ✕' : voter.vote === 'keep' ? ' ♥' : '';
+        chip.textContent = voter.name + icon;
+        voterListEl.appendChild(chip);
+      }
+    }
+
+    async function sendVote(vote) {
+      if (voteRequestPending || !myVoterId) return;
+      const newVote = myVote === vote ? null : vote;
+      voteRequestPending = true;
+      updateVoteButtons(newVote);
+      try {
+        const res = await fetch('/api/vote', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: myVoterId, vote: newVote }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401 && data.pinRequired) {
+          setPinLocked(true);
+          updateVoteButtons(myVote);
+          return;
+        }
+        if (res.ok) {
+          myVote = newVote;
+        } else {
+          updateVoteButtons(myVote);
+        }
+      } catch (_) {
+        updateVoteButtons(myVote);
+      } finally {
+        voteRequestPending = false;
+      }
+    }
+
+    btnSkip.addEventListener('click', () => sendVote('skip'));
+    btnKeep.addEventListener('click', () => sendVote('keep'));
+
+    function connectVoterSSE() {
+      if (sseConn) sseConn.close();
+      sseConn = new EventSource('/events');
+
+      sseConn.onmessage = (e) => {
+        try {
+          const payload = JSON.parse(e.data);
+          if (payload.type === 'vote') {
+            const myRecord = payload.voters.find((v) => v.name === myVoterName);
+            if (myRecord) {
+              myVote = myRecord.vote;
+              updateVoteButtons();
+            }
+            renderVoterList(payload.voters);
+            return;
+          }
+          if (payload.type === 'loading') {
+            trackTitle.textContent = payload.title || '—';
+            trackArtist.textContent = payload.artist || '';
+            myVote = null;
+            updateVoteButtons();
+            return;
+          }
+          if (payload.status === 'playing' && payload.title) {
+            trackTitle.textContent = payload.title;
+            trackArtist.textContent = payload.artist || '';
+          }
+        } catch (_) {}
+      };
+
+      sseConn.onerror = () => {
+        sseConn.close();
+        sseConn = null;
+        setTimeout(connectVoterSSE, 3000);
+      };
+    }
+
+    function startHeartbeat() {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = setInterval(async () => {
+        if (!myVoterId) return;
+        try {
+          const res = await fetch('/api/voter/heartbeat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: myVoterId }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.status === 401 && data.pinRequired) {
+            setPinLocked(true);
+            clearInterval(heartbeatTimer);
+          } else if (res.status === 404 && myVoterName) {
+            await registerVoter(myVoterId, myVoterName);
+          }
+        } catch (_) {}
+      }, 20000);
+    }
+
+    async function registerVoter(id, name) {
+      try {
+        const res = await fetch('/api/voter/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, name }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401 && data.pinRequired) {
+          setPinLocked(true);
+          return null;
+        }
+        if (!res.ok) return null;
+        return data.name;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    nameSubmit.addEventListener('click', async () => {
+      const name = nameInput.value.trim();
+      if (!name) { nameInput.focus(); return; }
+      if (!myVoterId) {
+        myVoterId = generateId();
+        localStorage.setItem('voterSessionId', myVoterId);
+      }
+      const registeredName = await registerVoter(myVoterId, name);
+      if (!registeredName) return;
+      myVoterName = registeredName;
+      localStorage.setItem('voterName', myVoterName);
+      myVote = null;
+      nameOverlay.classList.add('hidden');
+      updateVoteButtons();
+      connectVoterSSE();
     });
+
+    nameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') nameSubmit.click();
+    });
+
+    async function initVoter() {
+      if (!myVoterId) {
+        if (myVoterName) nameInput.value = myVoterName;
+        nameOverlay.classList.remove('hidden');
+        return;
+      }
+      try {
+        const res = await fetch(`/api/voter/me?id=${encodeURIComponent(myVoterId)}`);
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401 && data.pinRequired) {
+          setPinLocked(true);
+          return;
+        }
+        if (res.ok && data.registered) {
+          myVoterName = data.name;
+          localStorage.setItem('voterName', myVoterName);
+          connectVoterSSE();
+          return;
+        }
+      } catch (_) {}
+      if (myVoterName) nameInput.value = myVoterName;
+      nameOverlay.classList.remove('hidden');
+    }
 
     async function checkAuth() {
       try {
         const res = await fetch('/api/status');
         const data = await res.json().catch(() => ({}));
-
         if (res.status === 401 && data.pinRequired) {
           setPinLocked(true);
-          return;
+          return false;
         }
-
         setPinLocked(false);
-      } catch (_err) {
+        return true;
+      } catch (_) {
         setPinLocked(false);
+        return true;
       }
     }
 
     updatePinDots();
-    updateRemoteButtons();
-    checkAuth();
+    updateNavButtons();
+    checkAuth().then((authed) => {
+      if (authed) {
+        initVoter();
+        startHeartbeat();
+      }
+    });
   </script>
 </body>
 </html>
