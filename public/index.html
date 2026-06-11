@@ -84,52 +84,60 @@
       top: 16px;
       right: 20px;
       display: flex;
-      align-items: center;
-      gap: 8px;
-      z-index: 50;
+      align-items: flex-start;
+      gap: 10px;
+      z-index: 160;
     }
 
-    .btn {
-      padding: 8px 16px;
+    .ctrl-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .ctrl-btn {
+      width: 52px;
+      height: 52px;
       border: none;
-      border-radius: 20px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
+      border-radius: 50%;
       background: var(--btn-bg);
       color: var(--text-primary);
-      transition: background 0.15s, transform 0.1s;
-      white-space: nowrap;
-      letter-spacing: 0.01em;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s, color 0.15s;
       -webkit-tap-highlight-color: transparent;
       touch-action: manipulation;
+      flex-shrink: 0;
     }
 
-    .btn:hover {
+    .ctrl-btn:hover {
       background: var(--btn-hover);
     }
 
-    .btn:active {
-      transform: scale(0.96);
+    .ctrl-btn:active {
+      transform: scale(0.93);
     }
 
-    .btn.active {
+    .ctrl-btn.active {
       background: var(--btn-active-bg);
       color: var(--btn-active-text);
     }
 
-    #status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--indicator-off);
-      flex-shrink: 0;
-      transition: background 0.3s;
+    .ctrl-btn__icon {
+      font-size: 26px;
+      line-height: 1;
     }
 
-    #status-dot.on {
-      background: var(--indicator-on);
-      box-shadow: 0 0 0 3px rgba(58, 138, 74, 0.2);
+    .ctrl-btn__label {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      line-height: 1;
+      color: var(--text-muted);
     }
 
     #lyrics-container {
@@ -632,9 +640,18 @@
 </head>
 <body>
   <div id="controls">
-    <div id="status-dot"></div>
-    <button class="btn" id="btn-start">Start</button>
-    <button class="btn" id="btn-stop">Stop</button>
+    <div class="ctrl-wrap">
+      <button class="ctrl-btn" id="btn-lyrics" aria-label="Toggle lyrics">
+        <span class="ctrl-btn__icon">♪</span>
+      </button>
+      <span class="ctrl-btn__label">Lyrics</span>
+    </div>
+    <div class="ctrl-wrap">
+      <button class="ctrl-btn" id="btn-vote" aria-label="Toggle voting">
+        <span class="ctrl-btn__icon">✌</span>
+      </button>
+      <span class="ctrl-btn__label">Vote</span>
+    </div>
   </div>
 
   <div id="app">
@@ -718,9 +735,8 @@
     const lyricsEl = document.getElementById('lyrics-text');
     const lyricsContainer = document.getElementById('lyrics-container');
     const lyricsInner = document.getElementById('lyrics-inner');
-    const statusDot = document.getElementById('status-dot');
-    const btnStart = document.getElementById('btn-start');
-    const btnStop = document.getElementById('btn-stop');
+    const btnLyrics = document.getElementById('btn-lyrics');
+    const btnVote = document.getElementById('btn-vote');
     const btnDark = document.getElementById('btn-dark');
     const loginBanner = document.getElementById('login-banner');
     const timeoutToast = document.getElementById('timeout-toast');
@@ -1045,15 +1061,11 @@
       }
     });
 
-    function setPollingUI(active) {
-      if (active) {
-        statusDot.classList.add('on');
-        btnStart.classList.add('active');
-        btnStop.classList.remove('active');
-      } else {
-        statusDot.classList.remove('on');
-        btnStart.classList.remove('active');
-        btnStop.classList.add('active');
+    function setModeUI(polling, voting) {
+      btnLyrics.classList.toggle('active', polling);
+      btnVote.classList.toggle('active', voting);
+      if (!voting) {
+        voteTally.classList.remove('visible', 'skipping');
       }
     }
 
@@ -1089,25 +1101,30 @@
 
     function handleEvent(payload) {
       if (payload.status === 'timeout') {
-        setPollingUI(false);
+        setModeUI(false, false);
         hideLoader();
         showTimeout();
         return;
       }
 
       if (payload.status === 'polling_started') {
-        setPollingUI(true);
+        setModeUI(true, !!payload.isVoting);
         return;
       }
 
       if (payload.status === 'polling_stopped') {
-        setPollingUI(false);
+        setModeUI(false, false);
         hideLoader();
         showLyrics('Polling stopped.', true, null, null, null, false);
         return;
       }
 
-      setPollingUI(payload.isPolling);
+      if (payload.status === 'vote_mode_changed') {
+        setModeUI(payload.isPolling, payload.isVoting);
+        return;
+      }
+
+      setModeUI(payload.isPolling, !!payload.isVoting);
 
       if (payload.status === 'playing' && payload.title) {
         hideLoader();
@@ -1194,8 +1211,8 @@
       }
     }
 
-    btnStart.addEventListener('click', () => apiCall('/api/start'));
-    btnStop.addEventListener('click', () => apiCall('/api/stop'));
+    btnLyrics.addEventListener('click', () => apiCall('/api/lyrics'));
+    btnVote.addEventListener('click', () => apiCall('/api/vote-mode'));
 
     async function checkAuth() {
       dbg('AUTH → GET /api/status', 'info');
@@ -1210,13 +1227,13 @@
         }
 
         setPinLocked(false);
-        dbg(`AUTH ← authenticated=${data.authenticated} isPolling=${data.isPolling}`, data.authenticated ? 'ok' : 'warn');
+        dbg(`AUTH ← authenticated=${data.authenticated} isPolling=${data.isPolling} isVoting=${data.isVoting}`, data.authenticated ? 'ok' : 'warn');
         if (!data.authenticated) {
           loginBanner.classList.add('visible');
         } else {
           loginBanner.classList.remove('visible');
         }
-        setPollingUI(data.isPolling);
+        setModeUI(data.isPolling, !!data.isVoting);
         return data;
       } catch (err) {
         dbg(`AUTH error: ${err}`, 'err');
