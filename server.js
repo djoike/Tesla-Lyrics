@@ -98,6 +98,7 @@ let tokens = loadTokens();
 
 // ─── Polling State ───────────────────────────────────────────────────────────
 let isPolling = false;
+let isVoting = false;
 let pollingTimer = null;      // 1-hour auto-stop timeout
 let pollInterval = null;      // setInterval handle
 let currentTrackId = null;
@@ -213,6 +214,7 @@ function buildVotePayload(toast = null) {
   const keepCount = active.filter((v) => v.vote === 'keep').length;
   return {
     type: 'vote',
+    isVoting,
     voters: active.map((v) => ({ name: v.name, vote: v.vote })),
     skipCount,
     keepCount,
@@ -265,6 +267,7 @@ async function evaluateAndSkip() {
 }
 
 function startSkipCountdown() {
+  if (!isVoting) return;
   clearTimeout(skipCountdownTimer);
   skipCountdownTimer = setTimeout(evaluateAndSkip, SKIP_COUNTDOWN_MS);
 }
@@ -1199,7 +1202,8 @@ function startPolling() {
   pollingTimer = setTimeout(() => {
     console.log('1-hour timeout reached. Stopping polling automatically.');
     stopPolling();
-    broadcast({ status: 'timeout', isPolling: false });
+    isVoting = false;
+    broadcast({ status: 'timeout', isPolling: false, isVoting: false });
   }, ONE_HOUR_MS);
 }
 
@@ -1321,8 +1325,8 @@ app.get('/events', (req, res) => {
 
   // Send current state immediately to new client
   const initialPayload = currentPayload
-    ? { ...currentPayload, source: currentPayload.source ?? null, usedAiExtraction: !!currentPayload.usedAiExtraction, isPolling }
-    : { status: 'idle', title: null, artist: null, album: null, albumArt: null, lyrics: 'Start polling to load lyrics.', source: null, usedAiExtraction: false, isPolling };
+    ? { ...currentPayload, source: currentPayload.source ?? null, usedAiExtraction: !!currentPayload.usedAiExtraction, isPolling, isVoting }
+    : { status: 'idle', title: null, artist: null, album: null, albumArt: null, lyrics: 'Start polling to load lyrics.', source: null, usedAiExtraction: false, isPolling, isVoting };
   res.write(`data: ${JSON.stringify(initialPayload)}\n\n`);
   res.write(`data: ${JSON.stringify(buildVotePayload())}\n\n`);
 
@@ -1354,25 +1358,54 @@ app.post('/api/page', (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/api/lyrics', (_req, res) => {
+  if (!tokens.access_token && !tokens.refresh_token) {
+    return res.status(401).json({ error: 'Not authenticated. Visit /login first.' });
+  }
+  if (isPolling) {
+    stopPolling();
+    broadcast({ status: 'polling_stopped', isPolling: false, isVoting });
+    res.json({ isPolling: false, isVoting });
+  } else {
+    startPolling();
+    broadcast({ status: 'polling_started', isPolling: true, isVoting });
+    res.json({ isPolling: true, isVoting });
+  }
+});
+
 app.post('/api/start', (_req, res) => {
   if (!tokens.access_token && !tokens.refresh_token) {
     return res.status(401).json({ error: 'Not authenticated. Visit /login first.' });
   }
   startPolling();
-  broadcast({ status: 'polling_started', isPolling: true });
-  res.json({ isPolling: true });
+  broadcast({ status: 'polling_started', isPolling: true, isVoting });
+  res.json({ isPolling: true, isVoting });
 });
 
 app.post('/api/stop', (_req, res) => {
   stopPolling();
-  broadcast({ status: 'polling_stopped', isPolling: false });
-  res.json({ isPolling: false });
+  isVoting = false;
+  resetVotes();
+  broadcast({ status: 'polling_stopped', isPolling: false, isVoting: false });
+  res.json({ isPolling: false, isVoting: false });
+});
+
+app.post('/api/vote-mode', (_req, res) => {
+  isVoting = !isVoting;
+  if (!isVoting) {
+    resetVotes();
+  }
+  console.log(`Vote mode ${isVoting ? 'enabled' : 'disabled'}.`);
+  broadcast({ status: 'vote_mode_changed', isPolling, isVoting });
+  broadcastVoteState(null);
+  res.json({ isVoting });
 });
 
 // Status endpoint
 app.get('/api/status', (_req, res) => {
   res.json({
     isPolling,
+    isVoting,
     authenticated: !!(tokens.access_token || tokens.refresh_token),
     currentTrack: currentPayload
       ? { title: currentPayload.title, artist: currentPayload.artist }
