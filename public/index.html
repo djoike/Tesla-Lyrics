@@ -570,6 +570,31 @@
     }
 
     #vote-tally.visible {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #vote-tally.skipping {
+      color: var(--text-secondary);
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    #vote-spinner {
+      width: 13px;
+      height: 13px;
+      border: 2px solid var(--divider);
+      border-top-color: var(--text-secondary);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+      display: none;
+    }
+
+    #vote-tally.skipping #vote-spinner {
       display: block;
     }
 
@@ -589,10 +614,10 @@
     .vote-toast-item {
       background: var(--btn-active-bg);
       color: var(--btn-active-text);
-      font-size: 13px;
+      font-size: 32px;
       font-weight: 600;
-      padding: 7px 18px;
-      border-radius: 20px;
+      padding: 17px 44px;
+      border-radius: 40px;
       white-space: nowrap;
       opacity: 0;
       transform: translateY(6px);
@@ -625,7 +650,7 @@
   <div id="timeout-toast">⏱ Polling stopped after 1 hour.</div>
   <div id="lyrics-source"></div>
   <div id="page-indicator"></div>
-  <div id="vote-tally"></div>
+  <div id="vote-tally"><div id="vote-spinner"></div><span id="vote-tally-text"></span></div>
   <div id="vote-toast-stack"></div>
   <div id="tap-flash"></div>
 
@@ -750,11 +775,17 @@
 
     function updateVoteTally(skipCount, keepCount, voterCount) {
       if (voterCount === 0) {
-        voteTally.classList.remove('visible');
+        voteTally.classList.remove('visible', 'skipping');
         return;
       }
-      voteTally.textContent = `♥ ${keepCount} keep · ✕ ${skipCount} skip`;
+      voteTally.querySelector('#vote-tally-text').textContent = `♥ ${keepCount} keep · ✕ ${skipCount} skip`;
+      voteTally.classList.remove('skipping');
       voteTally.classList.add('visible');
+    }
+
+    function showSkipping() {
+      voteTally.querySelector('#vote-tally-text').textContent = 'Skipping';
+      voteTally.classList.add('visible', 'skipping');
     }
 
     function dbg(msg, level = 'ok') {
@@ -1106,7 +1137,11 @@
             return;
           }
           if (payload.type === 'vote') {
-            updateVoteTally(payload.skipCount, payload.keepCount, payload.voters.length);
+            if (payload.skipping) {
+              showSkipping();
+            } else {
+              updateVoteTally(payload.skipCount, payload.keepCount, payload.voters.length);
+            }
             showVoteToast(payload.toast);
             return;
           }

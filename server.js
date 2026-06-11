@@ -239,7 +239,7 @@ async function evaluateAndSkip() {
   if (skipCount > keepCount) {
     console.log(`Vote: skip wins ${skipCount}–${keepCount}. Skipping track.`);
     resetVotes();
-    broadcastVoteState(null);
+    broadcast({ type: 'vote', voters: [], skipCount: 0, keepCount: 0, toast: null, skipping: true });
     if (TESSIE_API_TOKEN && TESSIE_VIN) {
       try {
         await axios.post(
