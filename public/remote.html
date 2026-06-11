@@ -105,6 +105,30 @@
       display: flex;
       flex-direction: column;
       gap: 10px;
+      position: relative;
+    }
+
+    #vote-disabled-overlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      font-size: clamp(16px, 4vw, 22px);
+      font-weight: 700;
+      color: var(--text-muted);
+      letter-spacing: 0.04em;
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    body.voting-disabled #vote-disabled-overlay {
+      display: flex;
+    }
+
+    body.voting-disabled #vote-section .vote-btn {
+      opacity: 0.25;
+      pointer-events: none;
     }
 
     .vote-btn {
@@ -396,6 +420,7 @@
     </div>
 
     <div id="vote-section">
+      <div id="vote-disabled-overlay">Voting not enabled</div>
       <button class="vote-btn" id="btn-skip" type="button">
         <span class="vote-btn__icon">✕</span>
         <span class="vote-btn__label">SKIP</span>
@@ -623,6 +648,10 @@
       btnKeep.classList.toggle('keep-active', v === 'keep');
     }
 
+    function setVotingEnabled(enabled) {
+      document.body.classList.toggle('voting-disabled', !enabled);
+    }
+
     function renderVoterList(voterArray) {
       voterListEl.innerHTML = '';
       for (const voter of voterArray) {
@@ -677,12 +706,17 @@
         try {
           const payload = JSON.parse(e.data);
           if (payload.type === 'vote') {
+            setVotingEnabled(payload.isVoting);
             const myRecord = payload.voters.find((v) => v.name === myVoterName);
             if (myRecord) {
               myVote = myRecord.vote;
               updateVoteButtons();
             }
             renderVoterList(payload.voters);
+            return;
+          }
+          if (payload.status === 'vote_mode_changed') {
+            setVotingEnabled(payload.isVoting);
             return;
           }
           if (payload.type === 'loading') {
@@ -695,6 +729,9 @@
           if (payload.status === 'playing' && payload.title) {
             trackTitle.textContent = payload.title;
             trackArtist.textContent = payload.artist || '';
+            setVotingEnabled(!!payload.isVoting);
+          } else if (payload.isVoting !== undefined) {
+            setVotingEnabled(!!payload.isVoting);
           }
         } catch (_) {}
       };
@@ -800,6 +837,7 @@
           return false;
         }
         setPinLocked(false);
+        setVotingEnabled(!!data.isVoting);
         return true;
       } catch (_) {
         setPinLocked(false);
