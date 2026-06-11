@@ -30,6 +30,9 @@ const WEB_LYRICS_CONFIG = {
   maxRedirects: Number.parseInt(process.env.WEB_LYRICS_MAX_REDIRECTS || '3', 10),
 };
 
+const TESSIE_API_TOKEN = process.env.TESSIE_API_TOKEN || null;
+const TESSIE_VIN = process.env.TESSIE_VIN || null;
+
 function createAuthCookieValue() {
   return crypto.createHmac('sha256', COOKIE_SECRET).update('authenticated').digest('hex');
 }
@@ -237,10 +240,24 @@ async function evaluateAndSkip() {
     console.log(`Vote: skip wins ${skipCount}–${keepCount}. Skipping track.`);
     resetVotes();
     broadcastVoteState(null);
+    if (TESSIE_API_TOKEN && TESSIE_VIN) {
+      try {
+        await axios.post(
+          `https://api.tessie.com/api/1/vehicles/${encodeURIComponent(TESSIE_VIN)}/command/media_next_track`,
+          null,
+          { headers: { Authorization: `Bearer ${TESSIE_API_TOKEN}` }, timeout: 10000 }
+        );
+        console.log('Vote: skip sent via Tessie media_next_track.');
+        return;
+      } catch (err) {
+        console.error('Vote: Tessie skip failed, falling back to Spotify:', err.message);
+      }
+    }
     try {
       await spotifyPost('https://api.spotify.com/v1/me/player/next');
+      console.log('Vote: skip sent via Spotify API.');
     } catch (err) {
-      console.error('Vote: skip API error:', err.message);
+      console.error('Vote: Spotify skip also failed:', err.message);
     }
   } else {
     console.log(`Vote: keep wins or tie ${keepCount}–${skipCount}. Song continues.`);
@@ -1424,6 +1441,8 @@ app.listen(PORT, () => {
   if (!process.env.GENIUS_ACCESS_TOKEN)   degraded.push('GENIUS_ACCESS_TOKEN (Genius fallback disabled)');
   if (!process.env.BRAVE_SEARCH_API_KEY)  degraded.push('BRAVE_SEARCH_API_KEY (Brave Search fallback disabled)');
   if (!process.env.GITHUB_TOKEN)          degraded.push('GITHUB_TOKEN (AI extraction disabled)');
+  if (!process.env.TESSIE_API_TOKEN)      degraded.push('TESSIE_API_TOKEN (Tessie skip disabled, falling back to Spotify)');
+  if (!process.env.TESSIE_VIN)            degraded.push('TESSIE_VIN (Tessie skip disabled, falling back to Spotify)');
 
   if (missing.length > 0) {
     console.error('ERROR: Required environment variables are not set — the app will not function:');
