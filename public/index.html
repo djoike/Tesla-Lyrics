@@ -97,8 +97,8 @@
     }
 
     .ctrl-btn {
-      width: 52px;
-      height: 52px;
+      width: 65px;
+      height: 65px;
       border: none;
       border-radius: 50%;
       background: var(--btn-bg);
@@ -127,7 +127,7 @@
     }
 
     .ctrl-btn__icon {
-      font-size: 26px;
+      font-size: 32px;
       line-height: 1;
     }
 
@@ -1101,39 +1101,21 @@
 
     function handleEvent(payload) {
       if (payload.status === 'timeout') {
-        setModeUI(false, false);
         hideLoader();
         showTimeout();
         return;
       }
 
-      if (payload.status === 'polling_started') {
-        setModeUI(true, !!payload.isVoting);
-        return;
-      }
-
-      if (payload.status === 'polling_stopped') {
-        setModeUI(false, false);
-        hideLoader();
-        showLyrics('Polling stopped.', true, null, null, null, false);
-        return;
-      }
-
-      if (payload.status === 'vote_mode_changed') {
-        setModeUI(payload.isPolling, payload.isVoting);
-        return;
-      }
-
-      setModeUI(payload.isPolling, !!payload.isVoting);
-
       if (payload.status === 'playing' && payload.title) {
         hideLoader();
         showLyrics(payload.lyrics || 'Lyrics not found.', !payload.lyrics, payload.source, payload.artist, payload.title, !!payload.usedAiExtraction);
-      } else if (payload.status === 'idle') {
+        return;
+      }
+
+      if (payload.status === 'idle') {
         hideLoader();
         showLyrics('Nothing is currently playing.', true, null, null, null, false);
-      } else {
-        showLyrics(payload.lyrics || 'Tap Start to load lyrics.', true, null, null, null, false);
+        return;
       }
     }
 
@@ -1148,6 +1130,10 @@
       es.onmessage = (e) => {
         try {
           const payload = JSON.parse(e.data);
+          if (payload.type === 'state') {
+            setModeUI(payload.isPolling, payload.isVoting);
+            return;
+          }
           if (payload.type === 'page') {
             const delta = payload.direction === 'next' ? 1 : -1;
             renderPage(currentPage + delta);
