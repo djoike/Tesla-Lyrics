@@ -705,6 +705,10 @@
       sseConn.onmessage = (e) => {
         try {
           const payload = JSON.parse(e.data);
+          if (payload.type === 'state') {
+            setVotingEnabled(payload.isVoting);
+            return;
+          }
           if (payload.type === 'vote') {
             setVotingEnabled(payload.isVoting);
             const myRecord = payload.voters.find((v) => v.name === myVoterName);
@@ -713,10 +717,6 @@
               updateVoteButtons();
             }
             renderVoterList(payload.voters);
-            return;
-          }
-          if (payload.status === 'vote_mode_changed') {
-            setVotingEnabled(payload.isVoting);
             return;
           }
           if (payload.type === 'loading') {
@@ -729,9 +729,6 @@
           if (payload.status === 'playing' && payload.title) {
             trackTitle.textContent = payload.title;
             trackArtist.textContent = payload.artist || '';
-            setVotingEnabled(!!payload.isVoting);
-          } else if (payload.isVoting !== undefined) {
-            setVotingEnabled(!!payload.isVoting);
           }
         } catch (_) {}
       };

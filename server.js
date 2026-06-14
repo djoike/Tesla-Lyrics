@@ -129,6 +129,10 @@ function broadcast(data) {
   }
 }
 
+function broadcastAppState() {
+  broadcast({ type: 'state', isPolling, isVoting });
+}
+
 function broadcastLog(msg, level = 'ok') {
   broadcast({ type: 'log', level, msg });
 }
@@ -1138,7 +1142,6 @@ async function pollSpotify() {
           lyrics: 'Nothing is playing.',
           source: null,
           usedAiExtraction: false,
-          isPolling,
         };
         broadcast(currentPayload);
       }
@@ -1178,7 +1181,6 @@ async function pollSpotify() {
       lyrics,
       source,
       usedAiExtraction: !!usedAiExtraction,
-      isPolling,
     };
     broadcast(currentPayload);
   } catch (err) {
@@ -1203,7 +1205,8 @@ function startPolling() {
     console.log('1-hour timeout reached. Stopping polling automatically.');
     stopPolling();
     isVoting = false;
-    broadcast({ status: 'timeout', isPolling: false, isVoting: false });
+    broadcastAppState();
+    broadcast({ status: 'timeout' });
   }, ONE_HOUR_MS);
 }
 
@@ -1323,10 +1326,11 @@ app.get('/events', (req, res) => {
 
   sseClients.add(res);
 
-  // Send current state immediately to new client
+  res.write(`data: ${JSON.stringify({ type: 'state', isPolling, isVoting })}\n\n`);
+
   const initialPayload = currentPayload
-    ? { ...currentPayload, source: currentPayload.source ?? null, usedAiExtraction: !!currentPayload.usedAiExtraction, isPolling, isVoting }
-    : { status: 'idle', title: null, artist: null, album: null, albumArt: null, lyrics: 'Start polling to load lyrics.', source: null, usedAiExtraction: false, isPolling, isVoting };
+    ? { ...currentPayload, source: currentPayload.source ?? null, usedAiExtraction: !!currentPayload.usedAiExtraction }
+    : { status: 'idle', title: null, artist: null, album: null, albumArt: null, lyrics: 'Start polling to load lyrics.', source: null, usedAiExtraction: false };
   res.write(`data: ${JSON.stringify(initialPayload)}\n\n`);
   res.write(`data: ${JSON.stringify(buildVotePayload())}\n\n`);
 
@@ -1364,41 +1368,20 @@ app.post('/api/lyrics', (_req, res) => {
   }
   if (isPolling) {
     stopPolling();
-    broadcast({ status: 'polling_stopped', isPolling: false, isVoting });
-    res.json({ isPolling: false, isVoting });
   } else {
     startPolling();
-    broadcast({ status: 'polling_started', isPolling: true, isVoting });
-    res.json({ isPolling: true, isVoting });
   }
-});
-
-app.post('/api/start', (_req, res) => {
-  if (!tokens.access_token && !tokens.refresh_token) {
-    return res.status(401).json({ error: 'Not authenticated. Visit /login first.' });
-  }
-  startPolling();
-  broadcast({ status: 'polling_started', isPolling: true, isVoting });
-  res.json({ isPolling: true, isVoting });
-});
-
-app.post('/api/stop', (_req, res) => {
-  stopPolling();
-  isVoting = false;
-  resetVotes();
-  broadcast({ status: 'polling_stopped', isPolling: false, isVoting: false });
-  res.json({ isPolling: false, isVoting: false });
+  broadcastAppState();
+  res.json({ isPolling, isVoting });
 });
 
 app.post('/api/vote-mode', (_req, res) => {
   isVoting = !isVoting;
-  if (!isVoting) {
-    resetVotes();
-  }
+  if (!isVoting) resetVotes();
   console.log(`Vote mode ${isVoting ? 'enabled' : 'disabled'}.`);
-  broadcast({ status: 'vote_mode_changed', isPolling, isVoting });
+  broadcastAppState();
   broadcastVoteState(null);
-  res.json({ isVoting });
+  res.json({ isPolling, isVoting });
 });
 
 // Status endpoint
