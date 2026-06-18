@@ -262,42 +262,47 @@
       padding-bottom: max(4px, env(safe-area-inset-bottom));
     }
 
-     #emoji-overlay {
-       position: fixed;
-       inset: 0;
-       z-index: 200;
-       background: var(--bg);
-       display: flex;
-       flex-direction: column;
-       align-items: center;
-       justify-content: center;
-       gap: 24px;
-       padding: 32px;
-     }
- 
-     #emoji-overlay.hidden {
-       display: none;
-     }
- 
-     #emoji-overlay h2 {
-       font-size: clamp(22px, 6vw, 30px);
-       font-weight: 700;
-       color: var(--text-primary);
-       text-align: center;
-     }
- 
-     #emoji-overlay p {
-       font-size: 14px;
-       color: var(--text-muted);
-       text-align: center;
-     }
- 
-     #emoji-grid {
-       display: grid;
-       grid-template-columns: repeat(5, 1fr);
-       gap: 12px;
-       width: min(340px, 90vw);
-     }
+      #emoji-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 200;
+        background: var(--bg);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+        padding: 32px 24px 24px;
+        overflow-y: auto;
+      }
+  
+      #emoji-overlay.hidden {
+        display: none;
+      }
+  
+      #emoji-overlay h2 {
+        font-size: clamp(22px, 6vw, 30px);
+        font-weight: 700;
+        color: var(--text-primary);
+        text-align: center;
+        flex-shrink: 0;
+      }
+  
+      #emoji-overlay p {
+        font-size: 14px;
+        color: var(--text-muted);
+        text-align: center;
+        flex-shrink: 0;
+        margin-top: -8px;
+      }
+  
+      #emoji-grid {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 12px;
+        width: min(340px, 90vw);
+        flex-shrink: 0;
+        padding-bottom: max(16px, env(safe-area-inset-bottom));
+      }
  
      .emoji-choice {
        aspect-ratio: 1;
@@ -505,7 +510,17 @@
      const pinSubmit = document.getElementById('pin-submit');
      const pinDigitButtons = Array.from(document.querySelectorAll('[data-pin-digit]'));
 
-     const EMOJI_LIST = ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐙','🦄','🐲','🌈','⭐','🍕'];
+     const EMOJI_LIST = [
+       '🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯',
+       '🦁','🐮','🐷','🐸','🐙','🦄','🐲','🦋','🐝','🦎',
+       '🐧','🦆','🦉','🦅','🐬','🐳','🦈','🐊','🦒','🦓',
+       '🦏','🦛','🐘','🦘','🐆','🐅','🐃','🐂','🐄','🦌',
+       '🌈','⭐','🌙','☀️','❄️','🔥','⚡','🌊','🌸','🌺',
+       '🍀','🌴','🌵','🍄','🌍','🪐','💎','🏆','🎸','🎺',
+       '🎯','🎲','🎮','🚀','🛸','🚂','🏎️','⚓','🗺️','🧭',
+       '🍕','🍔','🌮','🍜','🍣','🍩','🎂','🍦','🧃','☕',
+       '🏀','⚽','🎾','🏈','⚾','🥊','🎿','🏄','🧗','🤸',
+     ];
 
      let myVoterId = localStorage.getItem('voterSessionId');
      let myVoterName = localStorage.getItem('voterName');
@@ -660,19 +675,28 @@
       document.body.classList.toggle('voting-disabled', !enabled);
     }
 
-     function renderVoterList(voterArray) {
-       voterListEl.innerHTML = '';
-       for (const voter of voterArray) {
-         const chip = document.createElement('div');
-         chip.className = 'voter-chip';
-         if (voter.name === myVoterName) chip.classList.add('is-me');
-         if (voter.vote === 'skip') chip.classList.add('vote-skip');
-         if (voter.vote === 'keep') chip.classList.add('vote-keep');
-         chip.textContent = voter.name;
-         twemoji.parse(chip, { folder: 'svg', ext: '.svg' });
-         voterListEl.appendChild(chip);
-       }
-    }
+      function renderVoterList(voterArray) {
+        voterListEl.innerHTML = '';
+        for (const voter of voterArray) {
+          const chip = document.createElement('div');
+          chip.className = 'voter-chip';
+          if (voter.name === myVoterName) {
+            chip.classList.add('is-me');
+            chip.title = 'Tap to change emoji';
+            chip.style.cursor = 'pointer';
+            chip.addEventListener('click', () => {
+              emojiGrid.innerHTML = '';
+              buildEmojiGrid();
+              emojiOverlay.classList.remove('hidden');
+            });
+          }
+          if (voter.vote === 'skip') chip.classList.add('vote-skip');
+          if (voter.vote === 'keep') chip.classList.add('vote-keep');
+          chip.textContent = voter.name;
+          twemoji.parse(chip, { folder: 'svg', ext: '.svg' });
+          voterListEl.appendChild(chip);
+        }
+      }
 
     async function sendVote(vote) {
       if (voteRequestPending || !myVoterId) return;
@@ -800,20 +824,21 @@
        });
      }
 
-     async function selectEmoji(emoji) {
-       if (!myVoterId) {
-         myVoterId = generateId();
-         localStorage.setItem('voterSessionId', myVoterId);
-       }
-       const registeredName = await registerVoter(myVoterId, emoji);
-       if (!registeredName) return;
-       myVoterName = registeredName;
-       localStorage.setItem('voterName', myVoterName);
-       myVote = null;
-       emojiOverlay.classList.add('hidden');
-       updateVoteButtons();
-       connectVoterSSE();
-     }
+      async function selectEmoji(emoji) {
+        if (!myVoterId) {
+          myVoterId = generateId();
+          localStorage.setItem('voterSessionId', myVoterId);
+        }
+        const registeredName = await registerVoter(myVoterId, emoji);
+        if (!registeredName) return;
+        myVoterName = registeredName;
+        myVote = null;
+        localStorage.setItem('voterName', myVoterName);
+        emojiOverlay.classList.add('hidden');
+        updateVoteButtons();
+        if (sseConn) { sseConn.close(); sseConn = null; }
+        connectVoterSSE();
+      }
 
      async function initVoter() {
        if (!myVoterId) {
