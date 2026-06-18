@@ -1411,6 +1411,8 @@ app.post('/api/voter/register', (req, res) => {
   if (!id || typeof id !== 'string') return res.status(400).json({ error: 'id required' });
   if (!name || typeof name !== 'string' || !name.trim()) return res.status(400).json({ error: 'name required' });
   const trimmedName = name.trim().slice(0, 32);
+  const takenBy = [...voters.entries()].find(([vid, v]) => v.name === trimmedName && vid !== id);
+  if (takenBy) return res.status(409).json({ error: 'taken' });
   voters.set(id, { name: trimmedName, vote: null, lastSeen: Date.now() });
   console.log(`Voter registered: "${trimmedName}" (${id.slice(0, 8)}…)`);
   broadcastVoteState(`${trimmedName} joined`);
