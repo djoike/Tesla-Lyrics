@@ -178,41 +178,93 @@
       color: var(--keep-color);
     }
 
-    #voter-list {
-      flex-shrink: 0;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      justify-content: center;
-      padding: 2px 0;
-      min-height: 30px;
-    }
+     #voter-list {
+       flex-shrink: 0;
+       display: flex;
+       flex-direction: column;
+       align-items: center;
+       gap: 8px;
+       padding: 2px 0;
+       min-height: 30px;
+     }
+
+     #voter-others {
+       display: flex;
+       flex-wrap: wrap;
+       gap: 6px;
+       justify-content: center;
+     }
 
      .voter-chip {
-       font-size: 22px;
-       padding: 4px 8px;
+       font-size: 18px;
+       padding: 3px 10px;
        border-radius: 20px;
        background: var(--btn-bg);
        white-space: nowrap;
        border: 2px solid transparent;
        line-height: 1.3;
+       color: var(--text-muted);
      }
 
      .voter-chip img.emoji {
-       height: 1.2em;
-       width: 1.2em;
-       vertical-align: -0.2em;
+       height: 1.1em;
+       width: 1.1em;
+       vertical-align: -0.15em;
      }
- 
-     .voter-chip.is-me {
-       border-color: var(--divider);
+
+     .voter-chip-me {
+       display: flex;
+       align-items: center;
+       gap: 8px;
+       padding: 8px 16px;
+       border-radius: 24px;
+       background: var(--btn-bg);
+       border: 2px solid var(--divider);
+       cursor: pointer;
+       -webkit-tap-highlight-color: transparent;
+       touch-action: manipulation;
+       transition: background 0.12s;
      }
- 
+
+     .voter-chip-me:active {
+       background: var(--btn-hover);
+     }
+
+     .voter-chip-me__emoji {
+       font-size: 36px;
+       line-height: 1;
+     }
+
+     .voter-chip-me__emoji img.emoji {
+       height: 1em;
+       width: 1em;
+       vertical-align: -0.1em;
+     }
+
+     .voter-chip-me__label {
+       display: flex;
+       flex-direction: column;
+       gap: 1px;
+     }
+
+     .voter-chip-me__you {
+       font-size: 11px;
+       font-weight: 700;
+       letter-spacing: 0.08em;
+       text-transform: uppercase;
+       color: var(--text-muted);
+     }
+
+     .voter-chip-me__hint {
+       font-size: 12px;
+       color: var(--text-muted);
+     }
+
      .voter-chip.vote-skip {
        background: var(--skip-bg);
        border-color: var(--skip-border);
      }
- 
+
      .voter-chip.vote-keep {
        background: var(--keep-bg);
        border-color: var(--keep-border);
@@ -499,7 +551,7 @@
       </button>
     </div>
 
-    <div id="voter-list"></div>
+   <div id="voter-list"><div id="voter-others"></div></div>
 
     <div id="nav-row">
       <button class="nav-btn" id="btn-prev" type="button" data-direction="prev">◀ PREV</button>
@@ -756,25 +808,40 @@
     }
 
       function renderVoterList(voterArray) {
-        voterListEl.innerHTML = '';
-        for (const voter of voterArray) {
+        const othersEl = document.getElementById('voter-others');
+        othersEl.innerHTML = '';
+
+        const me = voterArray.find((v) => v.name === myVoterName);
+        const others = voterArray.filter((v) => v.name !== myVoterName);
+
+        const existing = voterListEl.querySelector('.voter-chip-me');
+        if (existing) existing.remove();
+
+        if (me) {
+          const card = document.createElement('div');
+          card.className = 'voter-chip-me';
+          card.innerHTML = `<span class="voter-chip-me__emoji">${me.name}</span>
+            <span class="voter-chip-me__label">
+              <span class="voter-chip-me__you">You</span>
+              <span class="voter-chip-me__hint">Tap to change</span>
+            </span>`;
+          twemoji.parse(card, { folder: 'svg', ext: '.svg' });
+          card.addEventListener('click', () => {
+            emojiGrid.innerHTML = '';
+            buildEmojiGrid();
+            emojiOverlay.classList.remove('hidden');
+          });
+          voterListEl.insertBefore(card, othersEl);
+        }
+
+        for (const voter of others) {
           const chip = document.createElement('div');
           chip.className = 'voter-chip';
-          if (voter.name === myVoterName) {
-            chip.classList.add('is-me');
-            chip.title = 'Tap to change emoji';
-            chip.style.cursor = 'pointer';
-            chip.addEventListener('click', () => {
-              emojiGrid.innerHTML = '';
-              buildEmojiGrid();
-              emojiOverlay.classList.remove('hidden');
-            });
-          }
           if (voter.vote === 'skip') chip.classList.add('vote-skip');
           if (voter.vote === 'keep') chip.classList.add('vote-keep');
           chip.textContent = voter.name;
           twemoji.parse(chip, { folder: 'svg', ext: '.svg' });
-          voterListEl.appendChild(chip);
+          othersEl.appendChild(chip);
         }
       }
 
