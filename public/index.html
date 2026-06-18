@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Tesla Lyrics</title>
+  <script src="https://unpkg.com/twemoji@latest/dist/twemoji.min.js" crossorigin="anonymous"></script>
   <style>
     *, *::before, *::after {
       box-sizing: border-box;
@@ -565,26 +566,59 @@
 
     #vote-tally {
       position: fixed;
-      bottom: 30px;
-      left: 28px;
-      font-size: 13px;
-      font-weight: 600;
-      letter-spacing: 0.04em;
-      color: var(--text-muted);
-      white-space: nowrap;
+      bottom: 24px;
+      left: 0;
+      right: 0;
       display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
       z-index: 20;
       pointer-events: none;
+      padding: 0 28px;
     }
 
     #vote-tally.visible {
       display: flex;
+    }
+
+    #vote-keep-side, #vote-skip-side {
+      display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 4px;
+      flex: 1;
+    }
+
+    #vote-keep-side {
+      justify-content: flex-end;
+      padding-right: 10px;
+    }
+
+    #vote-skip-side {
+      justify-content: flex-start;
+      padding-left: 10px;
+    }
+
+    #vote-divider {
+      width: 1px;
+      height: 28px;
+      background: var(--divider);
+      flex-shrink: 0;
+    }
+
+    .tally-emoji {
+      font-size: 22px;
+      line-height: 1;
+    }
+
+    .tally-emoji img.emoji {
+      height: 1em;
+      width: 1em;
+      vertical-align: -0.1em;
     }
 
     #vote-tally.skipping {
-      color: var(--text-secondary);
+      opacity: 0.6;
     }
 
     @keyframes spin {
@@ -667,7 +701,12 @@
   <div id="timeout-toast">⏱ Polling stopped after 1 hour.</div>
   <div id="lyrics-source"></div>
   <div id="page-indicator"></div>
-  <div id="vote-tally"><div id="vote-spinner"></div><span id="vote-tally-text"></span></div>
+  <div id="vote-tally">
+    <div id="vote-keep-side"></div>
+    <div id="vote-divider"></div>
+    <div id="vote-spinner"></div>
+    <div id="vote-skip-side"></div>
+  </div>
   <div id="vote-toast-stack"></div>
   <div id="tap-flash"></div>
 
@@ -746,8 +785,10 @@
     const btnDebug = document.getElementById('btn-debug');
     const debugOverlay = document.getElementById('debug-overlay');
     const debugLog = document.getElementById('debug-log');
-    const voteTally = document.getElementById('vote-tally');
-    const voteToastStack = document.getElementById('vote-toast-stack');
+     const voteTally = document.getElementById('vote-tally');
+     const voteKeepSide = document.getElementById('vote-keep-side');
+     const voteSkipSide = document.getElementById('vote-skip-side');
+     const voteToastStack = document.getElementById('vote-toast-stack');
     const btnDebugClose = document.getElementById('btn-debug-close');
     const btnDebugClear = document.getElementById('btn-debug-clear');
     const loaderOverlay = document.getElementById('loader-overlay');
@@ -789,20 +830,32 @@
       }, 3000);
     }
 
-    function updateVoteTally(skipCount, keepCount, voterCount) {
-      if (voterCount === 0) {
-        voteTally.classList.remove('visible', 'skipping');
-        return;
-      }
-      voteTally.querySelector('#vote-tally-text').textContent = `♥ ${keepCount} keep · ✕ ${skipCount} skip`;
-      voteTally.classList.remove('skipping');
-      voteTally.classList.add('visible');
-    }
+     function makeTallyEmoji(emoji) {
+       const span = document.createElement('span');
+       span.className = 'tally-emoji';
+       span.textContent = emoji;
+       twemoji.parse(span, { folder: 'svg', ext: '.svg' });
+       return span;
+     }
 
-    function showSkipping() {
-      voteTally.querySelector('#vote-tally-text').textContent = 'Skipping';
-      voteTally.classList.add('visible', 'skipping');
-    }
+     function updateVoteTally(skipCount, keepCount, voters) {
+       if (!voters || voters.length === 0) {
+         voteTally.classList.remove('visible', 'skipping');
+         return;
+       }
+       voteTally.classList.remove('skipping');
+       voteKeepSide.innerHTML = '';
+       voteSkipSide.innerHTML = '';
+       voters.filter((v) => v.vote === 'keep').forEach((v) => voteKeepSide.appendChild(makeTallyEmoji(v.name)));
+       voters.filter((v) => v.vote === 'skip').forEach((v) => voteSkipSide.appendChild(makeTallyEmoji(v.name)));
+       voteTally.classList.add('visible');
+     }
+
+     function showSkipping() {
+       voteKeepSide.innerHTML = '';
+       voteSkipSide.innerHTML = '';
+       voteTally.classList.add('visible', 'skipping');
+     }
 
     function dbg(msg, level = 'ok') {
       debugLineCount++;
@@ -1061,13 +1114,18 @@
       }
     });
 
-    function setModeUI(polling, voting) {
-      btnLyrics.classList.toggle('active', polling);
-      btnVote.classList.toggle('active', voting);
-      if (!voting) {
-        voteTally.classList.remove('visible', 'skipping');
-      }
-    }
+     function setModeUI(polling, voting) {
+       const wasPolling = btnLyrics.classList.contains('active');
+       btnLyrics.classList.toggle('active', polling);
+       btnVote.classList.toggle('active', voting);
+       if (!voting) {
+         voteTally.classList.remove('visible', 'skipping');
+       }
+       if (wasPolling && !polling) {
+         hideLoader();
+         showLyrics('', true, null, null, null, false);
+       }
+     }
 
     function showTimeout() {
       timeoutToast.classList.add('visible');
@@ -1139,15 +1197,15 @@
             renderPage(currentPage + delta);
             return;
           }
-          if (payload.type === 'vote') {
-            if (payload.skipping) {
-              showSkipping();
-            } else {
-              updateVoteTally(payload.skipCount, payload.keepCount, payload.voters.length);
-            }
-            showVoteToast(payload.toast);
-            return;
-          }
+           if (payload.type === 'vote') {
+             if (payload.skipping) {
+               showSkipping();
+             } else {
+               updateVoteTally(payload.skipCount, payload.keepCount, payload.voters);
+             }
+             showVoteToast(payload.toast);
+             return;
+           }
           if (payload.type === 'log') {
             dbg(payload.msg, payload.level || 'ok');
             return;
