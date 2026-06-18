@@ -567,15 +567,15 @@
     #vote-tally {
       position: fixed;
       bottom: 24px;
-      left: 0;
-      right: 0;
+      left: 28px;
       display: none;
       align-items: center;
-      justify-content: center;
       gap: 0;
       z-index: 20;
       pointer-events: none;
-      padding: 0 28px;
+      background: var(--btn-bg);
+      border-radius: 24px;
+      overflow: hidden;
     }
 
     #vote-tally.visible {
@@ -585,18 +585,25 @@
     #vote-keep-side, #vote-skip-side {
       display: flex;
       align-items: center;
-      gap: 4px;
-      flex: 1;
+      gap: 3px;
+      padding: 6px 10px;
+      min-width: 32px;
     }
 
     #vote-keep-side {
-      justify-content: flex-end;
-      padding-right: 10px;
+      background: rgba(26, 138, 58, 0.12);
+    }
+
+    body.dark #vote-keep-side {
+      background: rgba(60, 200, 100, 0.12);
     }
 
     #vote-skip-side {
-      justify-content: flex-start;
-      padding-left: 10px;
+      background: rgba(200, 32, 32, 0.10);
+    }
+
+    body.dark #vote-skip-side {
+      background: rgba(255, 80, 80, 0.10);
     }
 
     #vote-divider {
@@ -607,7 +614,7 @@
     }
 
     .tally-emoji {
-      font-size: 22px;
+      font-size: 20px;
       line-height: 1;
     }
 
@@ -634,6 +641,7 @@
       animation: spin 0.7s linear infinite;
       flex-shrink: 0;
       display: none;
+      margin: 6px 10px;
     }
 
     #vote-tally.skipping #vote-spinner {
