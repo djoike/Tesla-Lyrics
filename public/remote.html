@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Tesla Lyrics Remote</title>
+  <script src="https://unpkg.com/twemoji@latest/dist/twemoji.min.js" crossorigin="anonymous"></script>
   <style>
     *, *::before, *::after {
       box-sizing: border-box;
@@ -187,29 +188,35 @@
       min-height: 30px;
     }
 
-    .voter-chip {
-      font-size: 13px;
-      font-weight: 600;
-      padding: 4px 12px;
-      border-radius: 20px;
-      background: var(--btn-bg);
-      color: var(--text-secondary);
-      white-space: nowrap;
-      border: 1px solid transparent;
-    }
+     .voter-chip {
+       font-size: 22px;
+       padding: 4px 8px;
+       border-radius: 20px;
+       background: var(--btn-bg);
+       white-space: nowrap;
+       border: 2px solid transparent;
+       line-height: 1.3;
+     }
 
-    .voter-chip.is-me {
-      border-color: var(--divider);
-      color: var(--text-primary);
-    }
-
-    .voter-chip.vote-skip {
-      color: var(--skip-color);
-    }
-
-    .voter-chip.vote-keep {
-      color: var(--keep-color);
-    }
+     .voter-chip img.emoji {
+       height: 1.2em;
+       width: 1.2em;
+       vertical-align: -0.2em;
+     }
+ 
+     .voter-chip.is-me {
+       border-color: var(--divider);
+     }
+ 
+     .voter-chip.vote-skip {
+       background: var(--skip-bg);
+       border-color: var(--skip-border);
+     }
+ 
+     .voter-chip.vote-keep {
+       background: var(--keep-bg);
+       border-color: var(--keep-border);
+     }
 
     #nav-row {
       flex-shrink: 0;
@@ -255,72 +262,73 @@
       padding-bottom: max(4px, env(safe-area-inset-bottom));
     }
 
-    #name-overlay {
-      position: fixed;
-      inset: 0;
-      z-index: 200;
-      background: var(--bg);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 20px;
-      padding: 32px;
-    }
-
-    #name-overlay.hidden {
-      display: none;
-    }
-
-    #name-overlay h2 {
-      font-size: clamp(24px, 7vw, 32px);
-      font-weight: 700;
-      color: var(--text-primary);
-      text-align: center;
-    }
-
-    #name-overlay p {
-      font-size: 15px;
-      color: var(--text-muted);
-      text-align: center;
-    }
-
-    #name-input {
-      width: min(320px, 88vw);
-      font-size: 22px;
-      text-align: center;
-      padding: 14px 16px;
-      border: 2px solid var(--divider);
-      border-radius: 16px;
-      background: var(--bg);
-      color: var(--text-primary);
-      outline: none;
-      font-family: inherit;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    #name-input:focus {
-      border-color: var(--accent);
-    }
-
-    #name-submit {
-      width: min(320px, 88vw);
-      font-size: 18px;
-      font-weight: 700;
-      padding: 16px;
-      border: none;
-      border-radius: 16px;
-      background: var(--btn-active-bg);
-      color: var(--btn-active-text);
-      cursor: pointer;
-      font-family: inherit;
-      letter-spacing: 0.04em;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    #name-submit:active {
-      opacity: 0.8;
-    }
+     #emoji-overlay {
+       position: fixed;
+       inset: 0;
+       z-index: 200;
+       background: var(--bg);
+       display: flex;
+       flex-direction: column;
+       align-items: center;
+       justify-content: center;
+       gap: 24px;
+       padding: 32px;
+     }
+ 
+     #emoji-overlay.hidden {
+       display: none;
+     }
+ 
+     #emoji-overlay h2 {
+       font-size: clamp(22px, 6vw, 30px);
+       font-weight: 700;
+       color: var(--text-primary);
+       text-align: center;
+     }
+ 
+     #emoji-overlay p {
+       font-size: 14px;
+       color: var(--text-muted);
+       text-align: center;
+     }
+ 
+     #emoji-grid {
+       display: grid;
+       grid-template-columns: repeat(5, 1fr);
+       gap: 12px;
+       width: min(340px, 90vw);
+     }
+ 
+     .emoji-choice {
+       aspect-ratio: 1;
+       border: 2px solid var(--divider);
+       border-radius: 16px;
+       background: var(--btn-bg);
+       display: flex;
+       align-items: center;
+       justify-content: center;
+       font-size: 32px;
+       cursor: pointer;
+       -webkit-tap-highlight-color: transparent;
+       touch-action: manipulation;
+       transition: background 0.12s, border-color 0.12s, transform 0.08s;
+     }
+ 
+     .emoji-choice img.emoji {
+       height: 1em;
+       width: 1em;
+       pointer-events: none;
+     }
+ 
+     .emoji-choice:active {
+       transform: scale(0.9);
+       background: var(--btn-hover);
+     }
+ 
+     .emoji-choice.selected {
+       border-color: var(--accent);
+       background: var(--btn-hover);
+     }
 
     #pin-overlay {
       position: fixed;
@@ -441,11 +449,10 @@
     <div id="footer-label">Tesla Lyrics Remote</div>
   </main>
 
-  <div id="name-overlay" class="hidden">
+  <div id="emoji-overlay" class="hidden">
     <h2>Who are you?</h2>
-    <p>Enter your name to join the vote</p>
-    <input id="name-input" type="text" placeholder="Name or emoji 🎵" maxlength="32" autocomplete="off" />
-    <button id="name-submit" type="button">Join →</button>
+    <p>Pick your emoji to join the vote</p>
+    <div id="emoji-grid"></div>
   </div>
 
   <div id="pin-overlay" class="hidden">
@@ -486,21 +493,22 @@
     const btnSkip = document.getElementById('btn-skip');
     const btnKeep = document.getElementById('btn-keep');
     const trackTitle = document.getElementById('track-title');
-    const trackArtist = document.getElementById('track-artist');
-    const voterListEl = document.getElementById('voter-list');
-    const nameOverlay = document.getElementById('name-overlay');
-    const nameInput = document.getElementById('name-input');
-    const nameSubmit = document.getElementById('name-submit');
-    const pinOverlay = document.getElementById('pin-overlay');
-    const pinDisplay = document.getElementById('pin-display');
-    const pinDots = document.getElementById('pin-dots');
-    const pinError = document.getElementById('pin-error');
-    const pinBackspace = document.getElementById('pin-backspace');
-    const pinSubmit = document.getElementById('pin-submit');
-    const pinDigitButtons = Array.from(document.querySelectorAll('[data-pin-digit]'));
+     const trackArtist = document.getElementById('track-artist');
+     const voterListEl = document.getElementById('voter-list');
+     const emojiOverlay = document.getElementById('emoji-overlay');
+     const emojiGrid = document.getElementById('emoji-grid');
+     const pinOverlay = document.getElementById('pin-overlay');
+     const pinDisplay = document.getElementById('pin-display');
+     const pinDots = document.getElementById('pin-dots');
+     const pinError = document.getElementById('pin-error');
+     const pinBackspace = document.getElementById('pin-backspace');
+     const pinSubmit = document.getElementById('pin-submit');
+     const pinDigitButtons = Array.from(document.querySelectorAll('[data-pin-digit]'));
 
-    let myVoterId = localStorage.getItem('voterSessionId');
-    let myVoterName = localStorage.getItem('voterName');
+     const EMOJI_LIST = ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐙','🦄','🐲','🌈','⭐','🍕'];
+
+     let myVoterId = localStorage.getItem('voterSessionId');
+     let myVoterName = localStorage.getItem('voterName');
     let myVote = null;
     let sseConn = null;
     let heartbeatTimer = null;
@@ -532,14 +540,14 @@
       pinErrorTimer = null;
     }
 
-    function setPinLocked(locked) {
-      document.body.classList.toggle('pin-locked', locked);
-      pinOverlay.classList.toggle('hidden', !locked);
-      if (locked) {
-        nameOverlay.classList.add('hidden');
-      }
-      updateNavButtons();
-    }
+     function setPinLocked(locked) {
+       document.body.classList.toggle('pin-locked', locked);
+       pinOverlay.classList.toggle('hidden', !locked);
+       if (locked) {
+         emojiOverlay.classList.add('hidden');
+       }
+       updateNavButtons();
+     }
 
     function clearPinEntry() {
       pinEntry = '';
@@ -652,18 +660,18 @@
       document.body.classList.toggle('voting-disabled', !enabled);
     }
 
-    function renderVoterList(voterArray) {
-      voterListEl.innerHTML = '';
-      for (const voter of voterArray) {
-        const chip = document.createElement('div');
-        chip.className = 'voter-chip';
-        if (voter.name === myVoterName) chip.classList.add('is-me');
-        if (voter.vote === 'skip') chip.classList.add('vote-skip');
-        if (voter.vote === 'keep') chip.classList.add('vote-keep');
-        const icon = voter.vote === 'skip' ? ' ✕' : voter.vote === 'keep' ? ' ♥' : '';
-        chip.textContent = voter.name + icon;
-        voterListEl.appendChild(chip);
-      }
+     function renderVoterList(voterArray) {
+       voterListEl.innerHTML = '';
+       for (const voter of voterArray) {
+         const chip = document.createElement('div');
+         chip.className = 'voter-chip';
+         if (voter.name === myVoterName) chip.classList.add('is-me');
+         if (voter.vote === 'skip') chip.classList.add('vote-skip');
+         if (voter.vote === 'keep') chip.classList.add('vote-keep');
+         chip.textContent = voter.name;
+         twemoji.parse(chip, { folder: 'svg', ext: '.svg' });
+         voterListEl.appendChild(chip);
+       }
     }
 
     async function sendVote(vote) {
@@ -780,50 +788,56 @@
       }
     }
 
-    nameSubmit.addEventListener('click', async () => {
-      const name = nameInput.value.trim();
-      if (!name) { nameInput.focus(); return; }
-      if (!myVoterId) {
-        myVoterId = generateId();
-        localStorage.setItem('voterSessionId', myVoterId);
-      }
-      const registeredName = await registerVoter(myVoterId, name);
-      if (!registeredName) return;
-      myVoterName = registeredName;
-      localStorage.setItem('voterName', myVoterName);
-      myVote = null;
-      nameOverlay.classList.add('hidden');
-      updateVoteButtons();
-      connectVoterSSE();
-    });
+     function buildEmojiGrid() {
+       EMOJI_LIST.forEach((emoji) => {
+         const btn = document.createElement('button');
+         btn.className = 'emoji-choice';
+         btn.type = 'button';
+         btn.textContent = emoji;
+         twemoji.parse(btn, { folder: 'svg', ext: '.svg' });
+         btn.addEventListener('click', () => selectEmoji(emoji));
+         emojiGrid.appendChild(btn);
+       });
+     }
 
-    nameInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') nameSubmit.click();
-    });
+     async function selectEmoji(emoji) {
+       if (!myVoterId) {
+         myVoterId = generateId();
+         localStorage.setItem('voterSessionId', myVoterId);
+       }
+       const registeredName = await registerVoter(myVoterId, emoji);
+       if (!registeredName) return;
+       myVoterName = registeredName;
+       localStorage.setItem('voterName', myVoterName);
+       myVote = null;
+       emojiOverlay.classList.add('hidden');
+       updateVoteButtons();
+       connectVoterSSE();
+     }
 
-    async function initVoter() {
-      if (!myVoterId) {
-        if (myVoterName) nameInput.value = myVoterName;
-        nameOverlay.classList.remove('hidden');
-        return;
-      }
-      try {
-        const res = await fetch(`/api/voter/me?id=${encodeURIComponent(myVoterId)}`);
-        const data = await res.json().catch(() => ({}));
-        if (res.status === 401 && data.pinRequired) {
-          setPinLocked(true);
-          return;
-        }
-        if (res.ok && data.registered) {
-          myVoterName = data.name;
-          localStorage.setItem('voterName', myVoterName);
-          connectVoterSSE();
-          return;
-        }
-      } catch (_) {}
-      if (myVoterName) nameInput.value = myVoterName;
-      nameOverlay.classList.remove('hidden');
-    }
+     async function initVoter() {
+       if (!myVoterId) {
+         buildEmojiGrid();
+         emojiOverlay.classList.remove('hidden');
+         return;
+       }
+       try {
+         const res = await fetch(`/api/voter/me?id=${encodeURIComponent(myVoterId)}`);
+         const data = await res.json().catch(() => ({}));
+         if (res.status === 401 && data.pinRequired) {
+           setPinLocked(true);
+           return;
+         }
+         if (res.ok && data.registered) {
+           myVoterName = data.name;
+           localStorage.setItem('voterName', myVoterName);
+           connectVoterSSE();
+           return;
+         }
+       } catch (_) {}
+       buildEmojiGrid();
+       emojiOverlay.classList.remove('hidden');
+     }
 
     async function checkAuth() {
       try {
