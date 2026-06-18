@@ -538,18 +538,9 @@
   </div>
 
   <script>
-    function applyDarkMode(dark) {
-      document.body.classList.toggle('dark', dark);
-    }
-
-    const storedDarkMode = localStorage.getItem('darkMode');
-    if (storedDarkMode === '1') {
-      applyDarkMode(true);
-    } else if (storedDarkMode === '0') {
-      applyDarkMode(false);
-    } else {
-      applyDarkMode(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    }
+     const darkMQ = window.matchMedia('(prefers-color-scheme: dark)');
+     document.body.classList.toggle('dark', darkMQ.matches);
+     darkMQ.addEventListener('change', (e) => document.body.classList.toggle('dark', e.matches));
 
     const btnPrev = document.getElementById('btn-prev');
     const btnNext = document.getElementById('btn-next');
