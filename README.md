@@ -67,6 +67,8 @@ SPOTIFY_CLIENT_ID=your_client_id
 SPOTIFY_CLIENT_SECRET=your_client_secret
 REDIRECT_URI=http://<YOUR_NAS_IP>:5011/callback
 PORT=5011
+PIN_CODE=290585
+COOKIE_SECRET=change-me-to-a-random-string
 GENIUS_ACCESS_TOKEN=your_genius_access_token
 BRAVE_SEARCH_API_KEY=your_brave_search_api_key
 GITHUB_TOKEN=your_github_token
@@ -76,6 +78,8 @@ GITHUB_MODELS_API_BASE_URL=https://models.github.ai/inference
 WEB_LYRICS_FETCH_TIMEOUT_MS=10000
 WEB_LYRICS_MAX_BYTES=1048576
 WEB_LYRICS_MAX_REDIRECTS=3
+TESSIE_API_TOKEN=your_tessie_token
+TESSIE_VIN=your_tesla_vin
 ```
 
 Create the tokens file (must exist before the container starts):
@@ -150,9 +154,15 @@ Then visit `http://localhost:5011/login` to authenticate.
 ## Usage
 
 1. Open `http://<server-ip>:5011` in your Tesla browser (or bookmark it).
-2. Tap **Start** to begin polling. Play a song on Spotify — the lyrics will appear within 5 seconds.
-3. Tap **Stop** when you're done. Polling also auto-stops after 1 hour to avoid rate limits.
-4. The green dot in the top-right indicates polling is active.
+2. Tap the **♪ Lyrics** button to start polling. Play a song on Spotify — lyrics appear within 5 seconds.
+3. Tap **♪ Lyrics** again to stop. Polling also auto-stops after 1 hour.
+4. Tap the **✌ Vote** button to enable the family voting system independently of lyrics.
+
+### Remote voting
+
+Passengers open `http://<server-ip>:5011/remote` on their phones. On first visit they pick an emoji as their identity. Once voting is enabled from the main screen, Skip and Keep buttons become active. After a 5-second countdown from the last vote, skip wins if more people voted skip than keep — otherwise the song plays on.
+
+If `TESSIE_API_TOKEN` and `TESSIE_VIN` are set, the skip command goes directly to the car via Tessie. Otherwise it falls back to the Spotify API.
 
 ---
 
@@ -160,9 +170,10 @@ Then visit `http://localhost:5011/login` to authenticate.
 
 ```
 .
-├── server.js          # Express server: OAuth, SSE, Spotify polling, lyrics
+├── server.js          # Express server: OAuth, SSE, Spotify polling, lyrics, voting
 ├── public/
-│   └── index.html     # Tesla-optimized frontend (vanilla HTML/CSS/JS)
+│   ├── index.html     # Tesla display: lyrics, controls, vote tally, toasts
+│   └── remote.html    # Phone remote: emoji picker, vote buttons, PREV/NEXT nav
 ├── Dockerfile
 ├── package.json
 ├── .env.example
@@ -175,4 +186,6 @@ Then visit `http://localhost:5011/login` to authenticate.
 
 - Tokens are stored in `.tokens.json` — this file is git-ignored and must never be committed.
 - Lyrics are fetched from [LRCLIB](https://lrclib.net) first, then Genius, Brave Search page extraction, and optional GitHub Models extraction. If every step misses, the UI shows "Lyrics not found."
-- The Tesla Model 3 browser does not support all modern APIs. The app is intentionally built with zero frontend dependencies to maximize compatibility.
+- The Tesla Model 3 browser does not support all modern APIs. The app is intentionally built with minimal frontend dependencies (Twemoji via CDN only) to maximize compatibility.
+- The remote page (`/remote`) is PIN-free so passengers can join without the main PIN. All voter API routes still enforce authentication.
+- `TESSIE_API_TOKEN` and `TESSIE_VIN` are optional. Without them the skip falls back to the Spotify API, which may not work when the Tesla is the active playback device.
