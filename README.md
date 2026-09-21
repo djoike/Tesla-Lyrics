@@ -4,7 +4,7 @@ A self-hosted Node.js app that displays Spotify lyrics on your Tesla Model 3 bro
 
 ## How it Works
 
-The server polls Spotify every 5 seconds while active, fetches lyrics whenever the track changes, and pushes updates to the browser over Server-Sent Events. The fallback order is [LRCLIB](https://lrclib.net), Genius, Brave Search with deterministic page extraction, then Brave Search with GitHub Models extraction when configured. The frontend auto-sizes all the lyrics text to fill the screen without scrolling, uses the Wake Lock API to prevent the Tesla display from sleeping, and shows the current artist, title, source label, and AI extraction status in the footer.
+The server polls Spotify every 5 seconds while active, fetches lyrics whenever the track changes, and pushes updates to the browser over Server-Sent Events. The fallback order is [LRCLIB](https://lrclib.net), Genius, Brave Search with deterministic page extraction, then Brave Search with GitHub Models extraction when configured. The frontend renders lyrics at a fixed size and splits them into full-screen pages so nothing ever scrolls — longer songs switch to two columns, and you page through them with PREV/NEXT on the remote. It also uses the Wake Lock API to prevent the Tesla display from sleeping, and shows the current artist, title, source label, and AI extraction status in the footer.
 
 ---
 
@@ -187,5 +187,6 @@ If `TESSIE_API_TOKEN` and `TESSIE_VIN` are set, the skip command goes directly t
 - Tokens are stored in `.tokens.json` — this file is git-ignored and must never be committed.
 - Lyrics are fetched from [LRCLIB](https://lrclib.net) first, then Genius, Brave Search page extraction, and optional GitHub Models extraction. If every step misses, the UI shows "Lyrics not found."
 - The Tesla Model 3 browser does not support all modern APIs. The app is intentionally built with minimal frontend dependencies (Twemoji via CDN only) to maximize compatibility.
+- Tesla software `2026.26` (Summer Update) increased the in-car browser's default zoom, which made every website render about 50% larger with no way to zoom back out. The display page detects this and compensates automatically, so lyrics keep the same size and line count as before the update. Phones and desktop browsers are unaffected.
 - The remote page (`/remote`) is PIN-free so passengers can join without the main PIN. All voter API routes still enforce authentication.
 - `TESSIE_API_TOKEN` and `TESSIE_VIN` are optional. Without them the skip falls back to the Spotify API, which may not work when the Tesla is the active playback device.
