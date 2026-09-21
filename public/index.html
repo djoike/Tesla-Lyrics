@@ -4,6 +4,49 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Tesla Lyrics</title>
+  <script>
+    /*
+     * Tesla software 2026.26 ("Summer Update", Chromium 140 -> 148) raised the in-car
+     * browser's default zoom. On the same 1920x1200 panel devicePixelRatio went from
+     * 1.0 to ~1.53, so the CSS canvas shrank to ~1254x784 and every CSS pixel started
+     * painting ~1.53x larger. Tesla exposes no user zoom control to undo it.
+     *
+     * Zooming the root element by 1/dpr restores the original physical text size, but
+     * zoom alone is not enough: percentage heights and vw/vh units keep resolving
+     * against the un-zoomed viewport, so the layout would shrink into ~65% of the
+     * panel. The root is therefore also given an explicit canvas size, and --vw/--vh
+     * are repointed at that canvas so every viewport-relative length follows it.
+     *
+     * Net effect on a post-update car: a ~1920x1200 layout canvas, 30px lyrics painting
+     * at 30 physical px, and the same number of lines per page as before the update.
+     *
+     * Gated on the Model 3 / Model Y panel's physical size, so phones, retina laptops
+     * and pre-update cars (dpr 1.0) are left completely untouched.
+     */
+    (function restoreTeslaScale() {
+      var PANEL_WIDTH = 1920;
+      var PANEL_HEIGHT = 1200;
+      var TOLERANCE = 40;
+
+      var dpr = window.devicePixelRatio || 1;
+      if (dpr <= 1.01) return;
+
+      var physicalWidth = Math.round(window.screen.width * dpr);
+      var physicalHeight = Math.round(window.screen.height * dpr);
+      if (Math.abs(physicalWidth - PANEL_WIDTH) > TOLERANCE) return;
+      if (Math.abs(physicalHeight - PANEL_HEIGHT) > TOLERANCE) return;
+
+      var canvasWidth = window.innerWidth * dpr;
+      var canvasHeight = window.innerHeight * dpr;
+      var root = document.documentElement;
+
+      root.style.zoom = String(1 / dpr);
+      root.style.width = canvasWidth + 'px';
+      root.style.height = canvasHeight + 'px';
+      root.style.setProperty('--vw', (canvasWidth / 100) + 'px');
+      root.style.setProperty('--vh', (canvasHeight / 100) + 'px');
+    })();
+  </script>
   <script src="https://unpkg.com/twemoji@latest/dist/twemoji.min.js" crossorigin="anonymous"></script>
   <style>
     *, *::before, *::after {
@@ -25,6 +68,12 @@
       --indicator-on: #3a8a4a;
       --indicator-off: #8a8880;
       --divider: rgba(26, 26, 26, 0.1);
+
+      /* 1% of the layout canvas. Normally identical to 1vw/1vh; the Tesla scale
+         compensation in <head> overrides them, because vw/vh keep resolving
+         against the un-zoomed viewport once the root element is zoomed. */
+      --vw: 1vw;
+      --vh: 1vh;
     }
 
     body.dark {
@@ -75,8 +124,8 @@
     #app {
       display: flex;
       flex-direction: column;
-      height: 100vh;
-      width: 100vw;
+      height: calc(var(--vh) * 100);
+      width: calc(var(--vw) * 100);
       padding: 46px 28px 40px;
     }
 
@@ -230,7 +279,7 @@
     }
 
     #pin-pad {
-      width: min(380px, 90vw);
+      width: min(380px, calc(var(--vw) * 90));
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 16px;
@@ -351,7 +400,7 @@
       white-space: nowrap;
       transition: opacity 0.3s;
       opacity: 0;
-      max-width: calc(100vw - 160px);
+      max-width: calc(var(--vw) * 100 - 160px);
       overflow: hidden;
       text-overflow: ellipsis;
       text-align: center;
@@ -468,22 +517,22 @@
     }
 
     #loader-title {
-      font-size: clamp(18px, 4vw, 32px);
+      font-size: clamp(18px, calc(var(--vw) * 4), 32px);
       font-weight: 700;
       color: var(--text-primary);
       text-align: center;
-      max-width: 80vw;
+      max-width: calc(var(--vw) * 80);
     }
 
     #loader-artist {
-      font-size: clamp(14px, 2.5vw, 22px);
+      font-size: clamp(14px, calc(var(--vw) * 2.5), 22px);
       color: var(--text-secondary);
       text-align: center;
-      max-width: 80vw;
+      max-width: calc(var(--vw) * 80);
     }
 
     #loader-bar-track {
-      width: 60vw;
+      width: calc(var(--vw) * 60);
       max-width: 480px;
       height: 6px;
       border-radius: 3px;
