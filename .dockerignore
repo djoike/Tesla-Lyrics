@@ -1,0 +1,14 @@
+**/node_modules
+.env
+.env.*
+!.env.example
+.tokens.json
+.git
+.github
+.omo
+.sisyphus
+.playwright-mcp
+.codegraph
+docs
+*.log
+.DS_Store

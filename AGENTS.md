@@ -8,12 +8,12 @@ A self-hosted Node.js/Express app that displays Spotify lyrics on a Tesla Model 
 
 ## Stack
 
-- **Runtime:** Node.js 20, plain JavaScript (no TypeScript, no build step)
+- **Runtime:** Node.js 24 (`.nvmrc`), plain JavaScript (no TypeScript, no build step)
 - **Backend:** Express.js (`server.js` — single file, no src/ directory)
 - **Frontend:** Vanilla HTML/CSS/JS (`public/index.html`, `public/remote.html` — single files)
 - **Frontend dependency:** Twemoji (loaded via CDN script tag in both HTML files) — the only allowed frontend dependency
 - **Communication:** Server-Sent Events (SSE) from server to browser
-- **Container:** Docker, image published to `ghcr.io/djoike/tesla-lyrics` via GitHub Actions
+- **Container:** Docker image `ghcr.io/djoike/tesla-lyrics`, published by the manual `Release` workflow. It runs on the Synology NAS behind a Cloudflare Tunnel at `https://lyrics.monsted.org`. Same deploy pattern as the sibling projects Recipe, mikromagi.dk, SharedLogin and BudgetApp.
 
 ## Project structure
 
@@ -21,17 +21,25 @@ A self-hosted Node.js/Express app that displays Spotify lyrics on a Tesla Model 
 server.js              # All backend logic: OAuth, SSE, polling, lyrics fetching, voting
 public/index.html      # Main Tesla display: lyrics, controls, vote tally, toasts
 public/remote.html     # Phone remote: emoji picker, Skip/Keep vote buttons, nav
-Dockerfile             # Single-stage Node 20 Alpine, npm ci, EXPOSE 5011
+deploy/
+  Dockerfile             # Node 24 deps stage → alpine + node binary + tini, user app (10001), HEALTHCHECK /api/health
+  docker-compose.nas.yml # NAS stack: app (no host port) + cloudflared (profile "tunnel"), named volume "tokens"
+  .env.example           # Template for the NAS .env (compose interpolation, never committed)
+  deploy-nas.sh          # npm run deploy:nas — CI → Release → SSH pull/up → waits for /api/health version
+  nas-env.sh             # npm run deploy:nas-env — fills the NAS .env over SSH, carries over the old setup's values
+docs/runbooks/nas-deploy.md  # First-time setup, migration from the old container, update, rollback, logs
 .github/workflows/
-  publish.yml          # Builds and pushes to GHCR on push to main/master
-.env.example           # Environment variable template
+  ci.yml               # Every push: npm ci, node --check, smoke test of /api/health, bash -n on deploy scripts
+  release.yml          # Manual (workflow_dispatch): builds deploy/Dockerfile, pushes latest + sha-*, prunes old versions
+.dockerignore          # Keeps .env, .tokens.json and tool folders out of the image
+.env.example           # Local development env template
 package.json           # Dependencies: express, axios, dotenv, cheerio
 package-lock.json      # Lockfile — always commit, used by npm ci in Docker
 ```
 
 ## Port
 
-The app runs on **port 5011** (set via `PORT` env var, default `5011`).
+The app runs on **port 5011** (set via `PORT` env var, default `5011`). On the NAS the port is only exposed inside the compose network; the tunnel route is `http://app:5011`.
 
 ## Environment variables
 
@@ -49,22 +57,36 @@ The app runs on **port 5011** (set via `PORT` env var, default `5011`).
 | `GITHUB_MODELS_MODEL` | Optional, defaults to `gpt-4.1-mini` |
 | `BRAVE_SEARCH_API_BASE_URL` | Optional override for Brave Search API endpoint |
 | `GITHUB_MODELS_API_BASE_URL` | Optional override for GitHub Models inference endpoint |
+| `GITHUB_MODELS_MAX_PAGE_CHARS` | Optional, max page characters sent to the model (default `12000`) |
+| `GITHUB_MODELS_MAX_RETRY_WAIT_SEC` | Optional, longest `Retry-After` a 429 is retried after, once (default `15`) |
 | `WEB_LYRICS_FETCH_TIMEOUT_MS` | Optional timeout for guarded web lyrics fetches |
 | `WEB_LYRICS_MAX_BYTES` | Optional max response size for guarded web lyrics fetches |
 | `WEB_LYRICS_MAX_REDIRECTS` | Optional redirect cap for guarded web lyrics fetches |
 | `TESSIE_API_TOKEN` | Optional, from dash.tessie.com/settings/api — enables Tessie skip command |
 | `TESSIE_VIN` | Optional, your Tesla VIN — required when TESSIE_API_TOKEN is set |
+| `TOKENS_FILE` | Optional, where Spotify tokens are stored (default `.tokens.json` in the app root; `/app/data/tokens.json` in the image) |
+| `APP_VERSION` | Set at image build time to the commit SHA; reported by `/api/health` |
+| `CLOUDFLARE_TUNNEL_TOKEN`, `IMAGE` | NAS `.env` only, used by the compose file |
 
 ## Key backend behaviour
 
-- **Token storage:** Spotify tokens are persisted to `.tokens.json` in the app root. This file must be bind-mounted on the host so tokens survive container restarts. It must be created (`touch`) before the container starts or Docker will create a directory instead.
+- **Token storage:** Spotify tokens are persisted to `TOKENS_FILE` (default `.tokens.json`). In the image it is `/app/data/tokens.json`, and on the NAS `/app/data` is the named volume `tesla-lyrics_tokens`. If the volume is lost, visit `/login` once to link Spotify again.
+- **Health:** `GET /api/health` returns `{ status: 'ok', version }` without a PIN. It is used by the Docker `HEALTHCHECK`, CI and `deploy-nas.sh`.
 - **Mode state:** Two independent boolean flags — `isPolling` (lyrics active) and `isVoting` (vote mode active). Toggled via `POST /api/lyrics` and `POST /api/vote-mode`. Any mode change broadcasts `{ type: 'state', isPolling, isVoting }` — this is the only SSE event that drives mode UI on clients. Auto-stops polling after 60 minutes.
 - **Song change detection:** Tracks `currentTrackId`; only fetches lyrics and broadcasts SSE when the track ID changes. Resets all votes on track change.
 - **Lyrics:** Fetched in this order: `https://lrclib.net/api/get`, Genius (`https://api.genius.com/search` + page scrape via cheerio), Brave Search deterministic page extraction, then Brave Search + GitHub Models extraction when configured. Returns `"Lyrics not found."` if every step fails, and includes `source` plus `usedAiExtraction` in the SSE payload for footer metadata.
+- **AI extraction (GitHub Models):** The model only cleans up a page the code already found; it never searches. Per Brave page:
+  - The code's own extraction runs first, and a good result is returned directly.
+  - The AI runs only when that extraction found nothing or something weak (`shouldUseAiExtraction`).
+  - The prompt gets the page with chrome removed and `<br>` kept as line breaks, cut to `GITHUB_MODELS_MAX_PAGE_CHARS` around the first mention of the track name.
+  - The answer must pass `validateAiExtractionOutput`.
+  - On a 429, it retries once if `Retry-After` ≤ `GITHUB_MODELS_MAX_RETRY_WAIT_SEC`. Otherwise it skips the AI for the rest of that song, while the code's extraction still runs on later pages.
+  - If no page yields a good result, the first weak result from the code is returned before giving up with "Lyrics not found."
+  - Don't go back to "always use AI when a token is set": that discarded good results, and a long `Retry-After` stalled the song.
 - **SSE:** `/events` endpoint. On connect sends: `type:'state'` first, then current content payload, then current vote payload. Heartbeat comment every 30 seconds to keep the Tesla browser connection alive.
 - **Voting:** Voters register via `POST /api/voter/register` with a UUID (generated client-side) and a single emoji as their name. Registration rejects with 409 if the emoji is already taken by another active voter. Votes (`skip`/`keep`/`null`) submitted via `POST /api/vote`. After any vote change, a 5-second countdown starts (reset on each new vote); when it fires, skip wins if `skipCount > keepCount`, ties keep playing. If `TESSIE_API_TOKEN` and `TESSIE_VIN` are set, skip uses `POST https://api.tessie.com/api/1/vehicles/{vin}/command/media_next_track`; otherwise falls back to Spotify `POST /v1/me/player/next`.
 - **Voter lifecycle:** Each voter has a `lastSeen` timestamp updated on register, vote, and heartbeat. Voters inactive for 30 minutes are excluded from vote counts and cleaned up every 5 minutes. The remote page sends a heartbeat every 20 seconds.
-- **PIN protection:** `POST /pin` validates the PIN and sets an HMAC-signed cookie. All API routes return `{ pinRequired: true }` on 401 when unauthenticated. The `/remote` page is served without PIN so passengers can access it, but all voter API calls return 401 if unauthenticated.
+- **PIN protection:** `POST /pin` validates the PIN and sets an HMAC-signed cookie (`HttpOnly; SameSite=Lax`, plus `Secure` when `X-Forwarded-Proto` is https). Wrong PINs are limited to 10 per client per 15 minutes (key: `CF-Connecting-IP`, else the socket address); after that `/pin` returns 429. All API routes return `{ pinRequired: true }` on 401 when unauthenticated. `/login` and `/callback` redirect to `/` without the PIN: `/login` wipes the tokens and `/callback` stores whichever Spotify account returns. The `/remote` page is served without the PIN so passengers can access it, but all voter API calls return 401 if unauthenticated.
 
 ## Key frontend behaviour — main screen (index.html)
 
@@ -89,32 +111,36 @@ The app runs on **port 5011** (set via `PORT` env var, default `5011`).
 - **Heartbeat:** `POST /api/voter/heartbeat` every 20 seconds; auto re-registers if server restarted (404 response).
 - **SSE:** Connected to `/events` for live vote state, track title/artist, and mode changes.
 
-## Deployment (Synology NAS)
+## Deployment (Synology NAS + Cloudflare Tunnel)
 
-- NAS folder: `/volume1/docker/tesla-lyrics/`
-- Bind mounts: `.env` → `/app/.env` (read-only), `tokens.json` → `/app/.tokens.json`
-- Port mapping: `5011` → `5011`
-- Restart policy: `unless-stopped`
-- First-time auth: visit `http://<NAS_IP>:5011/login` once after container start
+Full runbook: `docs/runbooks/nas-deploy.md`. When walking the owner through it, give **one step at a time**.
+
+- **Site:** `https://lyrics.monsted.org` (remote: `/remote`). Cloudflare Tunnel `tesla-lyrics`, route `lyrics.monsted.org → http://app:5011`.
+- **NAS folder:** `/volume1/docker/tesla-lyrics/compose`, holding `docker-compose.yml` (a copy of `deploy/docker-compose.nas.yml`) and `.env` (mode 600). Compose project: `tesla-lyrics`.
+- **No host port.** The router's 5011 forward was closed for good in 2026-11, after the recently disclosed vulnerabilities. The old address `http://ds.monsted.org:5011` and the old single `docker run` container `tesla-lyrics` (with `.env` and `tokens.json` in `/volume1/docker/tesla-lyrics/`) are retired. `ds.monsted.org` still points at the home IP for SSH; don't route it through the tunnel.
+- **Spotify redirect URI:** `https://lyrics.monsted.org/callback`. Spotify only accepts HTTPS or loopback, so use `http://127.0.0.1:5011/callback` for local development.
+- **GitHub secrets for Release:** `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` (authenticated base-image pulls).
 
 ### Update procedure
 
-1. Push `master` — GitHub Actions builds and pushes the image to GHCR automatically. Wait for the workflow to go green before proceeding.
-2. In Unifi router settings, activate port forward for port **25**.
-3. In Synology DSM, enable SSH access.
-4. Connect: `ssh MortenMonsted@ds.monsted.org -p 25`
-5. Run the update command:
-   ```
-   sudo docker pull ghcr.io/djoike/tesla-lyrics:latest && sudo docker stop tesla-lyrics && sudo docker rm tesla-lyrics && sudo docker run -d --name tesla-lyrics --restart unless-stopped -p 5011:5011 -v /volume1/docker/tesla-lyrics/.env:/app/.env:ro -v /volume1/docker/tesla-lyrics/tokens.json:/app/.tokens.json ghcr.io/djoike/tesla-lyrics:latest
-   ```
-6. Disable SSH in DSM.
-7. Disable the port 25 forward in the router.
+1. Push `master`.
+2. From the Mac, on the home network, with SSH enabled in DSM: `npm run deploy:nas`. It waits for CI, reuses or starts a Release, asks for the NAS password once, pulls, restarts and waits until `/api/health` reports the commit. `--prepare` does only the GitHub part.
+3. If `deploy/docker-compose.nas.yml` changed, copy it to the NAS first (runbook "Update").
+
+Rollback: pin `IMAGE=ghcr.io/djoike/tesla-lyrics:sha-<short7>` in the NAS `.env`, then `docker compose --profile tunnel up -d`.
 
 ## What NOT to do
 
 - Do not add a build step or TypeScript — the project is intentionally plain JS
 - Do not add frontend dependencies beyond Twemoji (CDN) — the Tesla browser has limited compatibility
-- Do not add a `docker-compose.yml` — deployment is via Synology Container Manager directly
+- Do not publish a host port in `deploy/docker-compose.nas.yml`: the tunnel is the only way in
+- Do not give `PIN_CODE` or `COOKIE_SECRET` defaults in the NAS compose file, and don't exempt `/login` or `/callback` from the PIN
 - Do not commit `.env` or `.tokens.json` — both are in `.gitignore`
 - Do not suppress type errors with `as any` or `@ts-ignore`
-- Do not change the port without updating `server.js`, `Dockerfile`, `.env`, `README.md`, and this file
+- Do not change the port without updating `server.js`, `deploy/Dockerfile` (`PORT`, `EXPOSE`, `HEALTHCHECK`), `deploy/docker-compose.nas.yml`, the tunnel route, `.github/workflows/ci.yml`, `.env`, `README.md`, the runbook, and this file
+
+## Gotchas
+
+- Copying files from macOS with `tar` adds `._*` files unless `COPYFILE_DISABLE=1`.
+- Over a one-line `ssh host 'sudo docker …'`, Synology's sudo doesn't find `docker`. Run it in an interactive SSH session, or use `/usr/local/bin/docker`.
+- Deleting and recreating a DNS record makes resolvers cache NXDOMAIN for 30 min (Cloudflare SOA minimum). Edit records in place instead.

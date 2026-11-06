@@ -1,0 +1,50 @@
+# Production stack for the Synology NAS. Every value comes from Compose
+# interpolation of .env. No service loads a whole env file, so secrets only
+# reach the container that needs them.
+#
+# Same pattern as Recipe, mikromagi.dk, SharedLogin and BudgetApp: the app has no
+# host port and is only reachable through the Cloudflare Tunnel. Every service has
+# a memory cap so it can't starve the other stacks on the NAS. No CPU caps:
+# Synology's kernel has no CFS scheduler, so Docker rejects `cpus:`.
+name: tesla-lyrics
+
+services:
+  app:
+    image: ${IMAGE}
+    restart: unless-stopped
+    mem_limit: 256m
+    environment:
+      NODE_ENV: production
+      PORT: '5011'
+      TOKENS_FILE: /app/data/tokens.json
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
+      REDIRECT_URI: ${REDIRECT_URI}
+      # Required: the site is on the internet, so no built-in defaults.
+      PIN_CODE: ${PIN_CODE:?PIN_CODE must be set in .env}
+      COOKIE_SECRET: ${COOKIE_SECRET:?COOKIE_SECRET must be set in .env}
+      GENIUS_ACCESS_TOKEN: ${GENIUS_ACCESS_TOKEN:-}
+      BRAVE_SEARCH_API_KEY: ${BRAVE_SEARCH_API_KEY:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_MODELS_MODEL: ${GITHUB_MODELS_MODEL:-gpt-4.1-mini}
+      TESSIE_API_TOKEN: ${TESSIE_API_TOKEN:-}
+      TESSIE_VIN: ${TESSIE_VIN:-}
+    volumes:
+      # Named volume: Docker creates it owned by the image's app user. If it is lost,
+      # visit /login once to link Spotify again.
+      - tokens:/app/data
+    # No host port binding: the app is only reachable through the Cloudflare Tunnel.
+    expose:
+      - '5011'
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    restart: unless-stopped
+    mem_limit: 128m
+    profiles: ['tunnel']
+    depends_on:
+      - app
+
+volumes:
+  tokens:

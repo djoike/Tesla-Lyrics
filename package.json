@@ -5,7 +5,10 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "check": "node --check server.js",
+    "deploy:nas": "bash deploy/deploy-nas.sh",
+    "deploy:nas-env": "bash deploy/nas-env.sh"
   },
   "dependencies": {
     "axios": "^1.7.2",
@@ -14,7 +17,7 @@
     "express": "^4.19.2"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=24"
   },
   "license": "MIT"
 }

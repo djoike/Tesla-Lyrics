@@ -17,6 +17,8 @@ const PIN_CODE = process.env.PIN_CODE || '290585';
 const COOKIE_SECRET = process.env.COOKIE_SECRET || 'tesla-lyrics-secret';
 const COOKIE_NAME = 'tl_auth';
 const AUTH_COOKIE_MAX_AGE = 31536000;
+// The commit the image was built from (set by the Release workflow); reported by /api/health.
+const APP_VERSION = process.env.APP_VERSION || 'dev';
 const INDEX_FILE = path.join(__dirname, 'public/index.html');
 const REMOTE_FILE = path.join(__dirname, 'public/remote.html');
 const WEB_LYRICS_CONFIG = {
@@ -26,6 +28,11 @@ const WEB_LYRICS_CONFIG = {
   githubModelsApiBaseUrl: process.env.GITHUB_MODELS_API_BASE_URL || 'https://models.github.ai/inference',
   fetchTimeoutMs: Number.parseInt(process.env.WEB_LYRICS_FETCH_TIMEOUT_MS || '10000', 10),
   aiTimeoutMs: Number.parseInt(process.env.GITHUB_MODELS_TIMEOUT_MS || '45000', 10),
+  // Page text sent to the model is cut to this many characters (~3–4k tokens), well under the
+  // per-request input limit of the free GitHub Models tiers.
+  aiMaxPageChars: Number.parseInt(process.env.GITHUB_MODELS_MAX_PAGE_CHARS || '12000', 10),
+  // A 429 is retried once, and only if Retry-After asks for at most this many seconds.
+  aiMaxRetryWaitSec: Number.parseInt(process.env.GITHUB_MODELS_MAX_RETRY_WAIT_SEC || '15', 10),
   maxBytes: Number.parseInt(process.env.WEB_LYRICS_MAX_BYTES || '1048576', 10),
   maxRedirects: Number.parseInt(process.env.WEB_LYRICS_MAX_REDIRECTS || '3', 10),
 };
@@ -70,12 +77,56 @@ function hasValidPinCookie(req) {
   }
 }
 
-function setAuthCookie(res) {
-  res.setHeader('Set-Cookie', `${COOKIE_NAME}=${createAuthCookieValue()}; Path=/; HttpOnly; Max-Age=${AUTH_COOKIE_MAX_AGE}`);
+function setAuthCookie(req, res) {
+  // Behind the Cloudflare Tunnel the browser talks HTTPS; cloudflared forwards plain HTTP and says so here.
+  const secure = req.secure || req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
+  res.setHeader(
+    'Set-Cookie',
+    `${COOKIE_NAME}=${createAuthCookieValue()}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${AUTH_COOKIE_MAX_AGE}${secure}`
+  );
 }
 
+// ─── PIN attempt limit ──────────────────────────────────────────────────────
+// The site is reachable from the internet, so a 6-digit PIN needs a brake on guessing.
+// Per client: 10 wrong PINs per 15 minutes. Behind the tunnel the client is the
+// CF-Connecting-IP header, which Cloudflare sets and clients cannot.
+const PIN_WINDOW_MS = 15 * 60 * 1000;
+const PIN_MAX_FAILURES = 10;
+const pinFailures = new Map();
+
+function pinClientKey(req) {
+  return req.headers['cf-connecting-ip'] || req.socket.remoteAddress || 'unknown';
+}
+
+function pinLockedOut(key) {
+  const entry = pinFailures.get(key);
+  if (!entry) return false;
+  if (Date.now() - entry.since > PIN_WINDOW_MS) {
+    pinFailures.delete(key);
+    return false;
+  }
+  return entry.count >= PIN_MAX_FAILURES;
+}
+
+function recordPinFailure(key) {
+  const entry = pinFailures.get(key);
+  if (!entry || Date.now() - entry.since > PIN_WINDOW_MS) {
+    pinFailures.set(key, { count: 1, since: Date.now() });
+  } else {
+    entry.count += 1;
+  }
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of pinFailures) {
+    if (now - entry.since > PIN_WINDOW_MS) pinFailures.delete(key);
+  }
+}, PIN_WINDOW_MS).unref();
+
 // ─── Token Store ────────────────────────────────────────────────────────────
-const TOKEN_FILE = path.join(__dirname, '.tokens.json');
+// TOKENS_FILE points into a Docker volume on the NAS; locally it defaults to .tokens.json in the app root.
+const TOKEN_FILE = process.env.TOKENS_FILE || path.join(__dirname, '.tokens.json');
 
 function loadTokens() {
   try {
@@ -459,10 +510,31 @@ function extractDeterministicLyricsFromPage(pageResult, trackName, artistName) {
   return createLyricsResult(bestCandidate.cleaned, source, false);
 }
 
+// The AI only steps in where the code's own extraction found nothing or something weak.
 function shouldUseAiExtraction(deterministicResult) {
-  if (WEB_LYRICS_CONFIG.githubToken) return true;
   if (!deterministicResult) return true;
   return isWeakDeterministicLyricsExtraction(deterministicResult.lyrics);
+}
+
+// The page text for the model: the document with page chrome removed and <br> kept as line
+// breaks, cut to aiMaxPageChars. A long page is cut around the first mention of the track name,
+// where the lyrics usually are, rather than from the top.
+function buildAiPageText(pageResult, trackName) {
+  let text = '';
+  if (pageResult.document) {
+    const $ = pageResult.document;
+    $('script, style, nav, footer, form, header, aside, noscript, iframe, svg, canvas, button, input, select, option').remove();
+    $('br').replaceWith('\n');
+    text = normalizeLyricsCandidateText($('body').text() || $.text() || '');
+  }
+  if (!text) text = normalizeLyricsCandidateText(pageResult.text || pageResult.html || '');
+
+  const limit = WEB_LYRICS_CONFIG.aiMaxPageChars;
+  if (!limit || text.length <= limit) return text;
+
+  const titleIndex = trackName ? text.toLowerCase().indexOf(String(trackName).toLowerCase()) : -1;
+  const start = titleIndex > 0 ? Math.min(Math.max(0, titleIndex - 500), text.length - limit) : 0;
+  return text.slice(start, start + limit);
 }
 
 function validateAiExtractionOutput(rawLyrics) {
@@ -504,7 +576,7 @@ function validateAiExtractionOutput(rawLyrics) {
   return candidate;
 }
 
-async function fetchLyricsGithubModels(pageResult, trackName, artistName, deterministicResult = null) {
+async function fetchLyricsGithubModels(pageResult, trackName, artistName, deterministicResult = null, isRetry = false) {
   if (!WEB_LYRICS_CONFIG.githubToken) return { result: null, rateLimited: false };
   if (!shouldUseAiExtraction(deterministicResult)) return { result: deterministicResult, rateLimited: false };
   if (!pageResult || pageResult.status !== 'ok') return { result: null, rateLimited: false };
@@ -512,7 +584,7 @@ async function fetchLyricsGithubModels(pageResult, trackName, artistName, determ
   const source = createSourceLabelFromUrl(pageResult.url);
   if (!source) return { result: null, rateLimited: false };
 
-  const pageText = normalizeLyricsCandidateText(pageResult.text || pageResult.html || '');
+  const pageText = buildAiPageText(pageResult, trackName);
   if (!pageText) return { result: null, rateLimited: false };
 
   const aiStart = Date.now();
@@ -569,13 +641,15 @@ async function fetchLyricsGithubModels(pageResult, trackName, artistName, determ
     const elapsed = ((Date.now() - aiStart) / 1000).toFixed(1);
     if (err.response?.status === 429) {
       const retryAfter = Number.parseInt(err.response.headers?.['retry-after'] || '0', 10);
-      if (retryAfter > 0) {
+      // Retry once after a short wait. A long Retry-After (e.g. a daily quota) would hold the
+      // song's lyrics until long after it ended, so give up on AI for this song instead.
+      if (!isRetry && retryAfter > 0 && retryAfter <= WEB_LYRICS_CONFIG.aiMaxRetryWaitSec) {
         broadcastLog(`AI: rate limited — waiting ${retryAfter}s before retry…`, 'warn');
         await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000));
         broadcastLog(`AI: retrying after rate limit wait…`, 'info');
-        return fetchLyricsGithubModels(pageResult, trackName, artistName, deterministicResult);
+        return fetchLyricsGithubModels(pageResult, trackName, artistName, deterministicResult, true);
       }
-      broadcastLog(`AI: rate limited (no retry-after header) — skipping AI for this song`, 'warn');
+      broadcastLog(`AI: rate limited (retry-after ${retryAfter || 'none'}) — skipping AI for this song`, 'warn');
       return { result: null, rateLimited: true };
     }
     broadcastLog(`AI: extraction failed after ${elapsed}s — ${err.message}`, 'err');
@@ -1048,7 +1122,9 @@ async function fetchLyrics(trackName, artistName, albumName, durationSec) {
     const BRAVE_START = 55;
     const BRAVE_END = 99;
     const querySlice = (BRAVE_END - BRAVE_START) / braveQueries.length;
-    let aiAvailable = true;
+    let aiAvailable = !!WEB_LYRICS_CONFIG.githubToken;
+    // The first weak result from the code's extraction: used only if nothing better turns up.
+    let weakFallback = null;
 
     for (let qi = 0; qi < braveQueries.length; qi++) {
       const { q: query, params: extraParams } = braveQueries[qi];
@@ -1083,15 +1159,21 @@ async function fetchLyrics(trackName, artistName, albumName, durationSec) {
         }
 
         if (deterministicResult) {
+          if (!weakFallback) weakFallback = deterministicResult;
           console.log('Lyrics stage: deterministic candidate not strong enough for final use');
-          broadcastLog(`Brave: deterministic result weak (${deterministicResult.lyrics?.split('\n').length ?? 0} lines), trying AI…`, 'warn');
+          broadcastLog(`Brave: deterministic result weak (${deterministicResult.lyrics?.split('\n').length ?? 0} lines)`, 'warn');
         } else {
           console.log('Lyrics stage: deterministic miss');
-          broadcastLog('Brave: deterministic extraction found nothing, trying AI…', 'warn');
+          broadcastLog('Brave: deterministic extraction found nothing', 'warn');
         }
 
         if (!aiAvailable) {
-          broadcastLog('Brave: skipping AI (rate limited earlier this song)', 'warn');
+          broadcastLog(
+            WEB_LYRICS_CONFIG.githubToken
+              ? 'Brave: skipping AI (rate limited earlier this song), next candidate…'
+              : 'Brave: AI not configured, next candidate…',
+            'info'
+          );
           continue;
         }
 
@@ -1108,6 +1190,14 @@ async function fetchLyrics(trackName, artistName, albumName, durationSec) {
 
         broadcastLog('Brave: extraction miss on this candidate, continuing…', 'warn');
       }
+    }
+
+    if (weakFallback) {
+      console.log('Lyrics stage: using weak deterministic result as last resort');
+      console.log(`Lyrics source: ${weakFallback.source}`);
+      broadcastLog(`Brave: no better result — using the weak extraction from ${weakFallback.source}`, 'warn');
+      broadcastProgress('done', 100);
+      return weakFallback;
     }
 
     broadcastLog('Lyrics: all Brave queries and candidates exhausted', 'warn');
@@ -1225,12 +1315,23 @@ function stopPolling() {
 
 app.use(express.json());
 
+// Health check for Docker and deploy-nas.sh. No PIN, and nothing in it but the version.
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok', version: APP_VERSION });
+});
+
 app.post('/pin', (req, res) => {
+  const key = pinClientKey(req);
+  if (pinLockedOut(key)) {
+    return res.status(429).json({ ok: false, error: 'too_many_attempts' });
+  }
   if (req.body?.pin !== PIN_CODE) {
+    recordPinFailure(key);
     return res.status(401).json({ ok: false });
   }
 
-  setAuthCookie(res);
+  pinFailures.delete(key);
+  setAuthCookie(req, res);
   return res.json({ ok: true });
 });
 
@@ -1239,8 +1340,10 @@ app.use((req, res, next) => {
     return next();
   }
 
+  // Spotify login needs the PIN too: /login wipes the stored tokens and /callback stores
+  // whichever Spotify account comes back. Without a PIN, send the browser to the PIN screen.
   if (req.path === '/login' || req.path === '/callback') {
-    return next();
+    return res.redirect('/');
   }
 
   if (req.path === '/') {

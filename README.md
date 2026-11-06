@@ -13,7 +13,7 @@ The server polls Spotify every 5 seconds while active, fetches lyrics whenever t
 ### 1. Create a Spotify Developer App
 
 1. Go to [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) and create a new app.
-2. In the app settings, add a **Redirect URI** matching where you'll run the container, e.g. `http://<YOUR_NAS_IP>:5011/callback`.
+2. In the app settings, add a **Redirect URI** for each place the app runs: `https://lyrics.monsted.org/callback` for the NAS, `http://127.0.0.1:5011/callback` for local development. Spotify only accepts HTTPS, or a loopback address.
 3. Copy your **Client ID** and **Client Secret**.
 
 > **Important:** The `REDIRECT_URI` in your `.env` must match exactly what you registered in the Spotify dashboard.
@@ -38,105 +38,22 @@ Brave Search powers the web fallback stages after LRCLIB and Genius miss. GitHub
 - `BRAVE_SEARCH_API_BASE_URL` and `GITHUB_MODELS_API_BASE_URL` let you point at compatible endpoints for testing.
 - `WEB_LYRICS_FETCH_TIMEOUT_MS`, `WEB_LYRICS_MAX_BYTES`, and `WEB_LYRICS_MAX_REDIRECTS` tune the guarded web fetch.
 
-If `BRAVE_SEARCH_API_KEY` is missing, the app stops after the Genius fallback. If `GITHUB_TOKEN` is missing, the AI extraction step is skipped and only deterministic web extraction is used.
+If `BRAVE_SEARCH_API_KEY` is missing, the app stops after the Genius fallback. If `GITHUB_TOKEN` is missing, the AI extraction step is skipped and only deterministic web extraction is used. When it is set, the AI only steps in for pages where the code's own extraction found nothing or something weak. It gets at most 12,000 characters of the page, and gives up for the song rather than wait out a long rate limit.
 
 ---
 
-## GitHub Actions image publish
+## Deployment (Synology NAS + Cloudflare Tunnel)
 
-This repository uses GitHub Actions to build and publish Docker images to GitHub Container Registry (GHCR).
+Same setup as the sibling projects (Recipe, mikromagi.dk, SharedLogin, BudgetApp):
 
-- Workflow file: `.github/workflows/publish.yml`
-- Trigger: push to `master`/`main` or manual dispatch
-- Output image: `ghcr.io/<your-github-user>/tesla-lyrics`
+- **Image:** [`deploy/Dockerfile`](deploy/Dockerfile) builds `ghcr.io/djoike/tesla-lyrics`. It runs as a non-root user and has a health check on `/api/health`.
+- **CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs a syntax check and a smoke test on every push.
+- **Release:** [`.github/workflows/release.yml`](.github/workflows/release.yml) publishes the image. It is started by hand or by the deploy script, never by a push. Tags: `latest`, `sha-<commit>`.
+- **Stack:** [`deploy/docker-compose.nas.yml`](deploy/docker-compose.nas.yml) runs the app plus `cloudflared` in `/volume1/docker/tesla-lyrics/compose`. There is no host port; the site is `https://lyrics.monsted.org`. The Spotify tokens live in the Docker volume `tokens`.
+- **Deploy:** push, then `npm run deploy:nas` ([`deploy/deploy-nas.sh`](deploy/deploy-nas.sh)). It waits for CI, builds a Release, pulls and restarts on the NAS, then waits until the site reports the new commit.
+- **NAS `.env`:** `npm run deploy:nas-env` ([`deploy/nas-env.sh`](deploy/nas-env.sh)) fills it in over SSH.
 
-After the first publish, open the package in GitHub and set visibility to **public** if Synology should pull without credentials.
-
-## Synology Docker deployment (recommended)
-
-### 1) Prepare NAS files
-
-Create a folder, for example:
-
-- `/volume1/docker/tesla-lyrics/`
-
-Create `/volume1/docker/tesla-lyrics/.env` with:
-
-```env
-SPOTIFY_CLIENT_ID=your_client_id
-SPOTIFY_CLIENT_SECRET=your_client_secret
-REDIRECT_URI=http://<YOUR_NAS_IP>:5011/callback
-PORT=5011
-PIN_CODE=290585
-COOKIE_SECRET=change-me-to-a-random-string
-GENIUS_ACCESS_TOKEN=your_genius_access_token
-BRAVE_SEARCH_API_KEY=your_brave_search_api_key
-GITHUB_TOKEN=your_github_token
-GITHUB_MODELS_MODEL=gpt-4.1-mini
-BRAVE_SEARCH_API_BASE_URL=https://api.search.brave.com/res/v1/web/search
-GITHUB_MODELS_API_BASE_URL=https://models.github.ai/inference
-WEB_LYRICS_FETCH_TIMEOUT_MS=10000
-WEB_LYRICS_MAX_BYTES=1048576
-WEB_LYRICS_MAX_REDIRECTS=3
-TESSIE_API_TOKEN=your_tessie_token
-TESSIE_VIN=your_tesla_vin
-```
-
-Create the tokens file (must exist before the container starts):
-
-```bash
-touch /volume1/docker/tesla-lyrics/tokens.json
-```
-
-### 2) Publish image via GitHub Actions
-
-Push to `master`/`main` and let the publish workflow create image tags in GHCR.
-
-Default tags include:
-
-- `latest`
-- `sha-<commit>`
-
-### 3) Pull and start the container via SSH
-
-Synology Container Manager's UI cannot authenticate with GHCR directly. Use SSH instead:
-
-```bash
-sudo docker pull ghcr.io/djoike/tesla-lyrics:latest && sudo docker run -d \
-  --name tesla-lyrics \
-  --restart unless-stopped \
-  -p 5011:5011 \
-  -v /volume1/docker/tesla-lyrics/.env:/app/.env:ro \
-  -v /volume1/docker/tesla-lyrics/tokens.json:/app/.tokens.json \
-  ghcr.io/djoike/tesla-lyrics:latest
-```
-
-### 4) Authenticate with Spotify
-
-Open `http://<YOUR_NAS_IP>:5011/login` in any browser and complete the Spotify login. Tokens are written to `tokens.json` on the NAS and persist across container restarts — you only need to do this once.
-
-### 5) Verify
-
-- Open container logs in Container Manager and confirm the server started on port 5011.
-- Open `http://<YOUR_NAS_IP>:5011` in your Tesla browser, tap **Start**, and play a song.
-
-### Updating
-
-Synology's UI cannot pull updated images from GHCR. After pushing new code and the GitHub Actions workflow completes, run this single command via SSH to pull the new image and recreate the container:
-
-```bash
-sudo docker pull ghcr.io/djoike/tesla-lyrics:latest && sudo docker stop tesla-lyrics && sudo docker rm tesla-lyrics && sudo docker run -d \
-  --name tesla-lyrics \
-  --restart unless-stopped \
-  -p 5011:5011 \
-  -v /volume1/docker/tesla-lyrics/.env:/app/.env:ro \
-  -v /volume1/docker/tesla-lyrics/tokens.json:/app/.tokens.json \
-  ghcr.io/djoike/tesla-lyrics:latest
-```
-
-> Note: `docker restart` alone is not enough — the container must be recreated to pick up the new image.
-
-Then in Container Manager, select the `tesla-lyrics` container → **Action → Restart**.
+First-time setup, moving over from the old `docker run` container, rollback and logs: [docs/runbooks/nas-deploy.md](docs/runbooks/nas-deploy.md).
 
 ---
 
@@ -147,20 +64,20 @@ npm install
 node server.js
 ```
 
-Then visit `http://localhost:5011/login` to authenticate.
+Copy `.env.example` to `.env` and fill it in, with `REDIRECT_URI=http://127.0.0.1:5011/callback`. Open `http://127.0.0.1:5011`, enter the PIN, then visit `http://127.0.0.1:5011/login` to link Spotify. `/login` needs the PIN first.
 
 ---
 
 ## Usage
 
-1. Open `http://<server-ip>:5011` in your Tesla browser (or bookmark it).
+1. Open `https://lyrics.monsted.org` in your Tesla browser (or bookmark it) and enter the PIN once.
 2. Tap the **♪ Lyrics** button to start polling. Play a song on Spotify — lyrics appear within 5 seconds.
 3. Tap **♪ Lyrics** again to stop. Polling also auto-stops after 1 hour.
 4. Tap the **✌ Vote** button to enable the family voting system independently of lyrics.
 
 ### Remote voting
 
-Passengers open `http://<server-ip>:5011/remote` on their phones. On first visit they pick an emoji as their identity. Once voting is enabled from the main screen, Skip and Keep buttons become active. After a 5-second countdown from the last vote, skip wins if more people voted skip than keep — otherwise the song plays on.
+Passengers open `https://lyrics.monsted.org/remote` on their phones. On first visit they pick an emoji as their identity. Once voting is enabled from the main screen, Skip and Keep buttons become active. After a 5-second countdown from the last vote, skip wins if more people voted skip than keep — otherwise the song plays on.
 
 If `TESSIE_API_TOKEN` and `TESSIE_VIN` are set, the skip command goes directly to the car via Tessie. Otherwise it falls back to the Spotify API.
 
@@ -174,7 +91,14 @@ If `TESSIE_API_TOKEN` and `TESSIE_VIN` are set, the skip command goes directly t
 ├── public/
 │   ├── index.html     # Tesla display: lyrics, controls, vote tally, toasts
 │   └── remote.html    # Phone remote: emoji picker, vote buttons, PREV/NEXT nav
-├── Dockerfile
+├── deploy/
+│   ├── Dockerfile               # Production image (non-root, health check)
+│   ├── docker-compose.nas.yml   # NAS stack: app + cloudflared
+│   ├── .env.example             # Template for the NAS .env
+│   ├── deploy-nas.sh            # npm run deploy:nas
+│   └── nas-env.sh               # npm run deploy:nas-env
+├── docs/runbooks/nas-deploy.md  # Setup, update, rollback
+├── .github/workflows/           # ci.yml, release.yml
 ├── package.json
 ├── .env.example
 └── .gitignore
@@ -184,9 +108,10 @@ If `TESSIE_API_TOKEN` and `TESSIE_VIN` are set, the skip command goes directly t
 
 ## Notes
 
-- Tokens are stored in `.tokens.json` — this file is git-ignored and must never be committed.
+- Tokens are stored in `TOKENS_FILE`, which defaults to `.tokens.json` locally (git-ignored, never commit it). On the NAS they are in the Docker volume `tokens`.
+- The site is on the internet behind Cloudflare. `/login` and `/callback` need the PIN, and wrong PINs are limited to 10 per client per 15 minutes.
 - Lyrics are fetched from [LRCLIB](https://lrclib.net) first, then Genius, Brave Search page extraction, and optional GitHub Models extraction. If every step misses, the UI shows "Lyrics not found."
 - The Tesla Model 3 browser does not support all modern APIs. The app is intentionally built with minimal frontend dependencies (Twemoji via CDN only) to maximize compatibility.
 - Tesla software `2026.26` (Summer Update) increased the in-car browser's default zoom, which made every website render about 50% larger with no way to zoom back out. The display page detects this and compensates automatically, so lyrics keep the same size and line count as before the update. Phones and desktop browsers are unaffected.
-- The remote page (`/remote`) is PIN-free so passengers can join without the main PIN. All voter API routes still enforce authentication.
+- The remote page (`/remote`) loads without the PIN, but all voter API routes still require it. Each phone has to enter the PIN once.
 - `TESSIE_API_TOKEN` and `TESSIE_VIN` are optional. Without them the skip falls back to the Spotify API, which may not work when the Tesla is the active playback device.

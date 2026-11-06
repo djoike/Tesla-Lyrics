@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: ['**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      # Starts the server and checks it answers, without Spotify credentials.
+      - name: Smoke test
+        run: |
+          PORT=5011 TOKENS_FILE="$RUNNER_TEMP/tokens.json" node server.js > server.log 2>&1 &
+          for _ in $(seq 1 20); do
+            curl -fsS http://127.0.0.1:5011/api/health && exit 0
+            sleep 1
+          done
+          cat server.log
+          exit 1
+      - run: for f in deploy/*.sh; do bash -n "$f"; done
